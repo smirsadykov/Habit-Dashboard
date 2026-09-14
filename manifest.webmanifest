@@ -2,7 +2,7 @@
   "name": "Day Desk",
   "short_name": "Day Desk",
   "description": "Daily habits, tasks, training and projects.",
-  "id": "/daydesk/",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
