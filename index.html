@@ -58,7 +58,9 @@ header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px so
 .brand{font-family:var(--f-display);font-weight:700;font-size:17px;letter-spacing:-.02em}
 .brand span{color:var(--accent);font-family:var(--f-mono);font-weight:500}
 .datenav{display:flex;align-items:center;gap:2px;margin-left:auto}
-.datenav b{font-family:var(--f-display);font-weight:600;font-size:19px;letter-spacing:-.015em;min-width:210px;text-align:center;font-variant-numeric:tabular-nums}
+.tools{display:flex;align-items:center;gap:2px}
+.datelabel{font-family:var(--f-display);font-weight:600;font-size:19px;letter-spacing:-.015em;
+  min-width:200px;text-align:center;font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
 .ghost{background:none;border:1px solid transparent;border-radius:var(--r);padding:5px 9px;cursor:pointer;color:var(--ink-2)}
 .ghost:hover{background:var(--surface-2);color:var(--ink)}
 #syncbtn{font-family:var(--f-mono);font-size:12px;letter-spacing:.02em}
@@ -169,38 +171,35 @@ select.status{width:90px;flex:none}
 
 /* ---- narrow screens ---- */
 @media (max-width:560px){
-  .hbar{gap:10px;padding:12px 16px}
-  .datenav{margin-left:0;width:100%;justify-content:space-between;gap:0}
-  .datenav b{min-width:0;flex:1;font-size:14px}
-  .wrap{padding:0 16px 48px}
-  /* a task's project picker gets its own line instead of crushing the text */
-  select.chip{flex:1 0 100%;max-width:none;margin-left:27px;align-self:stretch}
-  #taskproj{margin-left:0}
-  form.add input[type=text]{flex:1 0 100%}
-  /* project name first, then its status row */
-  .prow{flex-wrap:wrap;row-gap:4px}
-  .pname{flex:1 0 100%;order:-1}
+  /* brand and tools share the first line; the date gets a full line to itself,
+     so it never wraps mid-phrase */
+  .hbar{gap:6px 10px;padding:10px 16px}
+  .tools{order:2;margin-left:auto}
+  .datenav{order:3;width:100%;margin-left:0;gap:4px}
+  .datelabel{flex:1;min-width:0;font-size:17px;overflow:hidden;text-overflow:ellipsis}
+  #today{display:none}                     /* the date itself jumps to today */
+  .wrap{padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}
+  main{gap:14px;padding-top:12px}
+  section{padding:14px 14px 12px;gap:10px}
   .creed{font-size:16px;padding:14px 4px}
-  .band{gap:12px}
+  .band{gap:10px}
   .pips{gap:14px;width:100%}
   .segs i{width:11px}
-}
 
-/* ---- touch: 44px targets, no hover to rely on ---- */
-@media (pointer:coarse){
-  li.row{padding:11px 4px}
-  .kids li.row{padding:9px 4px}
-  input[type=checkbox]{width:22px;height:22px;margin-top:1px}
-  li.row label{gap:12px;padding:2px 0}
-  .x{font-size:20px;padding:4px 8px;margin:-4px 0}
-  .ghost{padding:10px 12px}
-  .link{padding:8px 0}
-  select.chip,select.status{padding:6px 12px;font-size:12px}
-  select.status{width:104px}
-  .btn{padding:10px 16px}
-  input[type=text],input[type=number]{padding:10px 12px}
-  .cell{padding:12px 2px 14px}
-  .cell:hover{background:var(--surface-2)}
+  /* a task keeps its text and delete on one line; the project tag sits under it,
+     hugging its own text rather than stretching the width of the card */
+  li.row label{min-width:calc(100% - 46px)}   /* text + delete fill the line... */
+  li.row .x{order:2}
+  li.row select.chip{order:3;flex:0 0 auto;max-width:100%;margin:3px 0 1px 27px;align-self:flex-start}
+  /* only the task form needs a second row; a name-plus-Add form stays on one */
+  #taskform input[type=text]{flex:1 0 100%}
+  #taskproj{flex:1 1 auto;max-width:none;margin-left:0}
+  form.add .btn{flex:none}
+
+  /* project name first, then its status line */
+  .prow{flex-wrap:wrap;row-gap:6px}
+  .pname{flex:1 0 100%;order:-1}
+  .prow .x{margin-left:auto}
 }
 
 /* ---- dialog ---- */
@@ -241,12 +240,14 @@ header{padding-top:env(safe-area-inset-top)}
     <div class="brand">Day<span>/</span>Desk</div>
     <nav class="datenav">
       <button class="ghost" id="prev" aria-label="Previous day">&larr;</button>
-      <b id="dlabel">—</b>
+      <button class="ghost datelabel" id="dlabel" title="Jump to today">&mdash;</button>
       <button class="ghost" id="next" aria-label="Next day">&rarr;</button>
+    </nav>
+    <span class="tools">
       <button class="ghost" id="today" title="Jump to today">Today</button>
       <button class="ghost" id="syncbtn" data-state="off" title="Sync with GitHub">Sync off</button>
       <button class="ghost" id="settings" title="Edit habits, plan and targets">Setup</button>
-    </nav>
+    </span>
   </div>
 </header>
 
@@ -694,7 +695,7 @@ function renderCal(){
 /* ---------- interactions ---------- */
 $("prev").onclick=()=>{state.date=shift(state.date,-1);state.calMonth=parseDate(state.date);render()};
 $("next").onclick=()=>{state.date=shift(state.date,1);state.calMonth=parseDate(state.date);render()};
-$("today").onclick=()=>{state.date=iso(new Date());state.calMonth=new Date();render()};
+$("today").onclick=$("dlabel").onclick=()=>{state.date=iso(new Date());state.calMonth=new Date();render()};
 $("calprev").onclick=()=>{state.calMonth=new Date(state.calMonth.getFullYear(),state.calMonth.getMonth()-1,1);renderCal()};
 $("calnext").onclick=()=>{state.calMonth=new Date(state.calMonth.getFullYear(),state.calMonth.getMonth()+1,1);renderCal()};
 
