@@ -32,12 +32,32 @@ opening `index.html` as a `file://` URL works, but without offline caching or in
 
 ## Where the data lives
 
-`localStorage`, on the device you're using. Nothing leaves the browser and there is
-no server, which also means **no sync between devices**. Setup → Backup exports the
-whole thing as JSON and imports it back, which is how you move to a new phone.
+`localStorage`, on the device you're using — the app works fully offline with no
+account and no server.
 
-The same `index.html` also runs as a Claude artifact, where it uses the artifact's
-own store instead and does sync. It picks whichever is available at load.
+### Syncing across devices
+
+Setup → *Sync via GitHub* points the app at this repo. Every device holding the repo
+and a token shares one file, `data/daydesk.json`, which the app reads on load and
+writes a few seconds after any change.
+
+1. Create a **fine-grained personal access token** scoped to this repository only,
+   with **Contents: Read and write** and nothing else.
+2. Paste the repo (`owner/name`), branch, and token into Setup.
+
+The token is held in that browser's `localStorage` and never committed — treat each
+device as holding a key to this repo, and revoke the token if you lose the device.
+
+**Merging** is per document. The file carries the time each document was last
+written; on each sync the newer side wins that document. Two devices editing
+different days both survive; two devices editing the *same* day is
+last-writer-wins on that day. `node test-merge.mjs` checks this against the
+shipped code.
+
+Setup → Backup also exports and imports everything as JSON, with no GitHub involved.
+
+The same `index.html` runs as a Claude artifact too, where it uses the artifact's own
+store and skips GitHub entirely. It picks whichever is available at load.
 
 ## Shipping a change
 
@@ -51,4 +71,6 @@ index.html              the whole app: markup, styles, logic
 manifest.webmanifest    name, icons, standalone display
 sw.js                   offline cache for the app shell + fonts
 icon-*.png              generated app icons
+test-merge.mjs          self-check for the sync merge
+data/daydesk.json       created by the first sync
 ```

@@ -61,6 +61,10 @@ header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px so
 .datenav b{font-family:var(--f-display);font-weight:600;font-size:19px;letter-spacing:-.015em;min-width:210px;text-align:center;font-variant-numeric:tabular-nums}
 .ghost{background:none;border:1px solid transparent;border-radius:var(--r);padding:5px 9px;cursor:pointer;color:var(--ink-2)}
 .ghost:hover{background:var(--surface-2);color:var(--ink)}
+#syncbtn{font-family:var(--f-mono);font-size:12px;letter-spacing:.02em}
+#syncbtn[data-state="off"]{color:var(--ink-3)}
+#syncbtn[data-state="ok"]{color:var(--accent-ink)}
+#syncbtn[data-state="err"]{color:var(--crit)}
 .streak{font-family:var(--f-mono);font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);
   background:var(--accent-soft);border-radius:100px;padding:5px 12px}
 .streak b{color:var(--accent-ink);font-weight:600}
@@ -234,6 +238,7 @@ header{padding-top:env(safe-area-inset-top)}
       <b id="dlabel">—</b>
       <button class="ghost" id="next" aria-label="Next day">&rarr;</button>
       <button class="ghost" id="today" title="Jump to today">Today</button>
+      <button class="ghost" id="syncbtn" data-state="off" title="Sync with GitHub">Sync off</button>
       <button class="ghost" id="settings" title="Edit habits, plan and targets">Setup</button>
     </nav>
   </div>
@@ -317,6 +322,15 @@ header{padding-top:env(safe-area-inset-top)}
       <div class="wk" id="fweek"></div>
     </div>
     <div>
+      <h3>Sync via GitHub</h3>
+      <p class="hint">Every device that holds this repo and a token shares one <code>data/daydesk.json</code>.
+        The token is kept in this browser only &mdash; use a fine-grained token limited to this one repository with
+        <b>Contents: Read and write</b>, and nothing else. Leave blank to keep this device standalone.</p>
+      <div class="field"><label for="srepo">Repository (owner/name)</label><input type="text" id="srepo" placeholder="yourname/daydesk" autocomplete="off"></div>
+      <div class="field"><label for="sbranch">Branch</label><input type="text" id="sbranch" placeholder="main" autocomplete="off"></div>
+      <div class="field"><label for="stoken">Access token</label><input type="password" id="stoken" placeholder="github_pat_…" autocomplete="off"></div>
+    </div>
+    <div>
       <h3>Backup</h3>
       <p class="hint">This device keeps its own copy. Export before switching phones, import on the new one.</p>
       <div class="dataio">
@@ -359,25 +373,42 @@ const lsGet=p=>{try{return JSON.parse(localStorage.getItem(LS+p)||"null")}catch(
 const lsSet=(p,v)=>{try{localStorage.setItem(LS+p,JSON.stringify(v))}catch(e){}};
 
 function put(path,body){
-  if(db) db.doc(path).set(body).catch(e=>note("Couldn't save: "+e.message));
-  else lsSet(path,body);
+  if(db) return db.doc(path).set(body).catch(e=>note("Couldn't save: "+e.message));
+  lsSet(path,body);
+  const st=lsGet("u")||{}; st[path]=Date.now(); lsSet("u",st);   // per-document clock, for merging
+  clearTimeout(syncTimer); syncTimer=setTimeout(sync,3000);
+}
+/* every stored document, keyed by its path — the unit both sides merge on */
+function allLocal(){
+  const out={};
+  Object.keys(localStorage).forEach(k=>{
+    if(!k.startsWith(LS)) return;
+    const path=k.slice(LS.length);
+    if(path==="sync"||path==="u") return;
+    const v=lsGet(path); if(v) out[path]=v;
+  });
+  return out;
+}
+function loadLocal(){
+  state.days={};
+  Object.keys(localStorage).forEach(k=>{
+    if(k.startsWith(LS+"days/")) state.days[k.slice((LS+"days/").length)]=lsGet(k.slice(LS.length));
+  });
+  state.habits=lsGet("config/habits")||state.habits;
+  state.workout=lsGet("config/workout")||state.workout;
+  state.creed=lsGet("config/creed")||state.creed;
+  state.projects=lsGet("config/projects")||state.projects;
 }
 function note(msg){ $("offline").innerHTML='<div class="warnbar">'+esc(msg)+"</div>"; }
 
 async function connect(){
   try{ db=window.claude ? await claude.use("db") : null; }catch(e){ db=null; }
   if(!db){
-    if(!window.claude) $("offline").innerHTML="";
-    else note("Saving to this device only — no cross-device sync here.");
-    Object.keys(localStorage).forEach(k=>{
-      if(k.startsWith(LS+"days/")) state.days[k.slice((LS+"days/").length)]=lsGet(k.slice(LS.length));
-    });
-    state.habits=lsGet("config/habits")||state.habits;
-    state.workout=lsGet("config/workout")||state.workout;
-    state.creed=lsGet("config/creed")||state.creed;
-    state.projects=lsGet("config/projects")||state.projects;
-    return render();
+    loadLocal();
+    render();
+    return sync();
   }
+  $("syncbtn").hidden=true;
   const err=e=>note("Sync interrupted ("+e.code+"). Reload to reconnect.");
   db.doc("config/habits").onSnapshot(s=>{if(s.exists)state.habits=s.data();render()},err);
   db.doc("config/workout").onSnapshot(s=>{if(s.exists)state.workout=s.data();render()},err);
@@ -633,6 +664,8 @@ $("settings").onclick=()=>{
   $("fhabits").value=state.habits.text!==undefined?state.habits.text:(state.habits.items||[]).join("\n");
   $("fallow").value=allowMiss();
   $("fcreed").value=state.creed.text||"";
+  const sc=syncCfg();
+  $("srepo").value=sc.repo||""; $("sbranch").value=sc.branch||""; $("stoken").value=sc.token||"";
   DOWFULL.forEach((_,i)=>$("fd"+i).value=state.workout.days?.[i]||"");
   $("dlg").showModal();
 };
@@ -643,8 +676,88 @@ $("setupform").onsubmit=e=>{
   const days={}; DOWFULL.forEach((_,i)=>days[i]=$("fd"+i).value.trim());
   state.workout={days};
   put("config/habits",state.habits); put("config/creed",state.creed); put("config/workout",state.workout);
+  lsSet("sync",{repo:$("srepo").value.trim().replace(/^https?:\/\/github\.com\//,"").replace(/\.git$/,""),
+                branch:$("sbranch").value.trim()||"main",
+                token:$("stoken").value.trim(), last:syncCfg().last});
   render();
+  sync();
 };
+
+/* ---------- sync: the repo is the server ----------
+   One file, data/daydesk.json, holding every document plus the time each was
+   last written. Merging is per document: the newer side wins that document,
+   so two devices editing different days both survive. Two devices editing the
+   SAME day is last-writer-wins on that day. */
+const REMOTE="data/daydesk.json";
+const syncCfg=()=>lsGet("sync")||{};
+let syncTimer=null, syncing=false;
+
+function setSync(st,label,title){
+  const b=$("syncbtn");
+  b.dataset.state=st; b.textContent=label; b.title=title||"Sync with GitHub";
+}
+function b64(str){
+  const bytes=new TextEncoder().encode(str); let out="";
+  for(let i=0;i<bytes.length;i+=0x8000) out+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));
+  return btoa(out);
+}
+const unb64=b=>new TextDecoder().decode(Uint8Array.from(atob(b.replace(/\s/g,"")),c=>c.charCodeAt(0)));
+
+function ghFetch(method,body){
+  const c=syncCfg(), branch=c.branch||"main";
+  const url="https://api.github.com/repos/"+c.repo+"/contents/"+REMOTE+(method==="GET"?"?ref="+encodeURIComponent(branch):"");
+  const o={method,headers:{Authorization:"Bearer "+c.token,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"}};
+  if(body){ o.headers["Content-Type"]="application/json"; o.body=JSON.stringify(body) }
+  return fetch(url,o);
+}
+/* take each side's newer copy of each document; report which side moved */
+function mergeRemote(remote){
+  const stamps=lsGet("u")||{}, rdocs=(remote&&remote.docs)||{}, ru=(remote&&remote.u)||{};
+  let pulled=0, pushable=false;
+  Object.keys(rdocs).forEach(path=>{
+    if((ru[path]||0)>(stamps[path]||0)){ lsSet(path,rdocs[path]); stamps[path]=ru[path]; pulled++ }
+  });
+  lsSet("u",stamps);
+  Object.keys(allLocal()).forEach(path=>{ if((stamps[path]||0)>(ru[path]||0)) pushable=true });
+  return {pulled,pushable};
+}
+
+async function sync(){
+  const c=syncCfg();
+  if(db) return;
+  if(!c.repo||!c.token) return setSync("off","Sync off","Add a repository and token under Setup");
+  if(syncing) return;
+  syncing=true; setSync("busy","Syncing…");
+  try{
+    let remote=null, sha=null;
+    const r=await ghFetch("GET");
+    if(r.status===200){ const j=await r.json(); sha=j.sha; remote=JSON.parse(unb64(j.content)); }
+    else if(r.status===401||r.status===403) throw new Error("token rejected ("+r.status+")");
+    else if(r.status===404 && !r.headers.get("x-ratelimit-remaining")) throw new Error("repository not found");
+    else if(r.status!==404) throw new Error("GitHub "+r.status);
+
+    const {pulled,pushable}=mergeRemote(remote);
+    if(pushable||!remote){
+      const payload={v:1,u:lsGet("u")||{},docs:allLocal()};
+      const body={message:"Day Desk "+iso(new Date()),content:b64(JSON.stringify(payload,null,1)),branch:c.branch||"main"};
+      if(sha) body.sha=sha;
+      const w=await ghFetch("PUT",body);
+      if(w.status===409||w.status===422) throw new Error("changed on another device — syncing again shortly");
+      if(!w.ok) throw new Error("GitHub "+w.status);
+    }
+    if(pulled){ loadLocal(); render() }
+    lsSet("sync",Object.assign({},c,{last:Date.now()}));
+    setSync("ok","Synced","Last synced "+new Date().toLocaleTimeString());
+    $("offline").innerHTML="";
+  }catch(e){
+    const offline=!navigator.onLine;
+    setSync("err",offline?"Offline":"Sync ⚠",offline?"No connection — will sync when back online":String(e.message));
+    if(!offline) note("Sync: "+e.message);
+  }finally{ syncing=false }
+}
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) sync() });
+addEventListener("online",sync);
+$("syncbtn").onclick=()=>{ const c=syncCfg(); (c.repo&&c.token)?sync():$("settings").click() };
 
 /* ---------- backup ---------- */
 function snapshot(){
