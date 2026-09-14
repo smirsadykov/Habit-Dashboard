@@ -120,7 +120,8 @@ input[type=checkbox]{accent-color:var(--accent);width:17px;height:17px;margin:2p
 /* not wanted today: still visible, but out of the count */
 li.row.off>label{opacity:.45}
 li.row.off input[type=checkbox]{accent-color:var(--ink-3)}
-.sched{font-family:var(--f-mono);font-size:11px;color:var(--ink-3);flex:none;align-self:center;white-space:nowrap}
+.sched,.age{font-family:var(--f-mono);font-size:11px;color:var(--ink-3);flex:none;align-self:center;white-space:nowrap}
+.age{color:var(--warn)}
 .cell .dot.skip{width:10px;height:2px;border-radius:2px;border:0;background:var(--ink-3)}
 
 /* ---- forms ---- */
@@ -274,9 +275,8 @@ header{padding-top:env(safe-area-inset-top)}
     <section>
       <div class="shead"><h2>Tasks</h2><div class="meta" id="tmeta"></div></div>
       <ul id="tasks"></ul>
-      <button class="link" id="carry" hidden></button>
       <form class="add" id="taskform">
-        <input type="text" id="tasktext" placeholder="Add a task for this day" autocomplete="off">
+        <input type="text" id="tasktext" placeholder="Add a task" autocomplete="off">
         <select id="taskproj" class="chip" aria-label="Project"></select>
         <button class="btn" type="submit" id="addtask">Add</button>
       </form>
@@ -499,12 +499,15 @@ function ratio(s){
   const done=day(s).habits||{};
   return L.filter(l=>done[l.key]).length/L.length;
 }
-/* a day keeps the streak while no more than `allow` of the habits due that day are missed */
+/* A day keeps the streak when at least one habit due that day was ticked and no
+   more than `allow` were missed. The "at least one" matters: with a short habit
+   list an allowance can exceed the number due, and without this every blank day
+   in history would count as kept. */
 const allowMiss=()=>Math.max(0,+(state.habits.allow??1));
+const isKept=(due,done,allow)=>due>0&&done>0&&due-done<=allow;
 function kept(s){
-  const L=dueLeaves(s); if(!L.length) return false;
-  const done=day(s).habits||{};
-  return L.length-L.filter(l=>done[l.key]).length<=allowMiss();
+  const L=dueLeaves(s), ticks=day(s).habits||{};
+  return isKept(L.length,L.filter(l=>ticks[l.key]).length,allowMiss());
 }
 /* A skipped day is neither kept nor broken — the chain passes straight through
    it, so being ill or away costs nothing but doesn't earn a day either. */
@@ -518,6 +521,24 @@ function streak(){
     n++; cur=shift(cur,-1);
   }
   return n;
+}
+
+/* A task belongs to the day it was written on, and stays on the list every day
+   after that until it is ticked — so nothing is stranded on a day you skipped
+   past. Ticking one records the day it was finished, which is the day it stops
+   carrying forward (and the day it still shows on, so it doesn't vanish under
+   your finger). */
+function tasksFor(s){
+  const out=[];
+  Object.keys(state.days).filter(k=>k<s).sort().forEach(k=>
+    (state.days[k].tasks||[]).forEach((t,i)=>{ if(!t.done||t.doneOn===s) out.push({src:k,i,t}) }));
+  (day(s).tasks||[]).forEach((t,i)=>out.push({src:s,i,t}));
+  return out;
+}
+const taskRef=v=>{const j=v.lastIndexOf(":");return [v.slice(0,j),+v.slice(j+1)]};
+function patchTask(ref,fields){
+  const [src,i]=taskRef(ref);
+  saveDay(src,{tasks:(day(src).tasks||[]).map((x,j)=>j===i?Object.assign({},x,fields):x)});
 }
 
 /* ---------- render ---------- */
@@ -537,21 +558,19 @@ function render(){
   renderHabits();
 
   // tasks
-  const tasks=d.tasks||[];
-  $("tmeta").textContent=tasks.length?tasks.filter(t=>t.done).length+" / "+tasks.length:"";
+  const tasks=tasksFor(s);
+  $("tmeta").textContent=tasks.length?tasks.filter(x=>x.t.done).length+" / "+tasks.length:"";
   $("tasks").innerHTML = tasks.length
-    ? tasks.map((t,i)=>{
-        const pr=proj(t.p);
-        return '<li class="row'+(t.done?" done":"")+'"><label><input type="checkbox" data-task="'+i+'"'+(t.done?" checked":"")+'><span class="txt">'+esc(t.text)+"</span></label>"
-        +'<select class="chip'+(pr?" s-"+pr.status:"")+'" data-taskproj="'+i+'" aria-label="Project">'
+    ? tasks.map(({src,i,t})=>{
+        const pr=proj(t.p), ref=src+":"+i;
+        return '<li class="row'+(t.done?" done":"")+'"><label><input type="checkbox" data-task="'+ref+'"'+(t.done?" checked":"")+'><span class="txt">'+esc(t.text)+"</span></label>"
+        +(src!==s?'<span class="age" title="Added '+esc(src)+'">'+ago(src)+"</span>":"")
+        +'<select class="chip'+(pr?" s-"+pr.status:"")+'" data-taskproj="'+ref+'" aria-label="Project">'
         +'<option value=""'+(pr?"":" selected")+">Unassigned</option>"
         +projects().map(p=>'<option value="'+esc(p.id)+'"'+(p.id===t.p?" selected":"")+">"+esc(p.name)+"</option>").join("")
-        +'</select><button class="x" data-deltask="'+i+'" aria-label="Delete task">&times;</button></li>';
+        +'</select><button class="x" data-deltask="'+ref+'" aria-label="Delete task">&times;</button></li>';
       }).join("")
-    : '<li class="empty">Nothing on the list for this day.</li>';
-  const left=openEarlier();
-  $("carry").hidden=!left.length;
-  $("carry").textContent="Move "+left.length+" open task"+(left.length===1?"":"s")+" here from earlier days";
+    : '<li class="empty">Nothing open.</li>';
 
   renderProjects();
 
@@ -591,7 +610,7 @@ function schedNote(it,s){
 }
 
 function renderPips(){
-  const s=state.date, d=day(s), tasks=d.tasks||[];
+  const s=state.date, d=day(s), tasks=tasksFor(s).map(x=>x.t);
   const hL=dueLeaves(s), hd=d.habits||{}, wL=leavesOf(planTree(s)), wd=d.workout||{};
   const groups=[
     ["Habits",hL.filter(l=>hd[l.key]).length,hL.length],
@@ -692,14 +711,17 @@ document.addEventListener("change",e=>{
       .forEach(k=>next[k.key]=t.checked);
     saveDay(s,{[f]:next});
   }
-  else if(t.dataset.task!==undefined) saveDay(s,{tasks:(d.tasks||[]).map((x,i)=>i==t.dataset.task?Object.assign({},x,{done:t.checked}):x)});
-  else if(t.dataset.taskproj!==undefined) saveDay(s,{tasks:(d.tasks||[]).map((x,i)=>i==t.dataset.taskproj?Object.assign({},x,{p:t.value}):x)});
+  else if(t.dataset.task!==undefined) patchTask(t.dataset.task,{done:t.checked,doneOn:t.checked?s:null});
+  else if(t.dataset.taskproj!==undefined) patchTask(t.dataset.taskproj,{p:t.value});
   else if(t.dataset.status!==undefined) saveProjects((state.projects.items||[]).map(p=>p.id===t.dataset.status?Object.assign({},p,{status:t.value}):p));
 });
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-deltask],[data-delproj],[data-day]"); if(!b) return;
   const s=state.date, d=day(s);
-  if(b.dataset.deltask!==undefined) saveDay(s,{tasks:(d.tasks||[]).filter((_,i)=>i!=b.dataset.deltask)});
+  if(b.dataset.deltask!==undefined){
+    const [src,i]=taskRef(b.dataset.deltask);
+    saveDay(src,{tasks:(day(src).tasks||[]).filter((_,j)=>j!==i)});
+  }
   else if(b.dataset.delproj!==undefined) saveProjects((state.projects.items||[]).filter(p=>p.id!==b.dataset.delproj));
   else if(b.dataset.day){state.date=b.dataset.day;render()}
 });
@@ -717,21 +739,7 @@ $("projform").onsubmit=e=>{
   saveProjects((state.projects.items||[]).concat([{id:Date.now().toString(36),name:v,status:"active"}]));
   $("projname").value="";
 };
-/* every unfinished task on any earlier day, oldest first — moved, not copied */
-function openEarlier(){
-  const out=[];
-  Object.keys(state.days).filter(k=>k<state.date).sort().forEach(k=>
-    (state.days[k].tasks||[]).forEach((t,i)=>{ if(!t.done) out.push({date:k,i,t}) }));
-  return out;
-}
 $("skip").onclick=()=>saveDay(state.date,{skip:!skipped(state.date)});
-$("carry").onclick=()=>{
-  const items=openEarlier(); if(!items.length) return;
-  const by={};
-  items.forEach(x=>(by[x.date]=by[x.date]||[]).push(x.i));
-  Object.keys(by).forEach(d0=>saveDay(d0,{tasks:(day(d0).tasks||[]).filter((_,i)=>!by[d0].includes(i))}));
-  saveDay(state.date,{tasks:(day(state.date).tasks||[]).concat(items.map(x=>({text:x.t.text,done:false,p:x.t.p})))});
-};
 
 /* ---------- setup dialog ---------- */
 $("fweek").innerHTML=DOWFULL.map((n,i)=>'<div class="field"><label for="fd'+i+'">'+n+'</label><textarea id="fd'+i+'" rows="5"></textarea></div>').join("");

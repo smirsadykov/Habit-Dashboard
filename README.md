@@ -9,7 +9,7 @@ Static files, no build step, no dependencies. Installable as a PWA and works off
 |---|---|
 | Affirmation | A standing line across the top of every day |
 | Habits | Nested checkboxes, per-habit schedules, skippable days, a streak that tolerates N misses |
-| Tasks | Per-day list; every task belongs to a project; open tasks can be moved forward |
+| Tasks | Written on a day, carried until ticked; every task belongs to a project |
 | Workout | Today's items from a weekly plan |
 | Projects | Status (Active / On hold / Done), open count, last touched |
 | Month | Habit completion and training days at a glance; click a day to open it |
@@ -36,6 +36,15 @@ through it: it costs nothing and earns nothing.
 
 **Rewording** a habit carries its history with it, as long as you don't add or
 remove lines in the same edit. Change the wording, save, then add new habits.
+
+## Tasks
+
+A task belongs to the day you wrote it on and stays on the list every day after
+that until you tick it — nothing is stranded on a day you skipped past. Carried
+tasks show their age (`5d`) so a stale one is obvious.
+
+Ticking records the day you finished it: that is the day it stops carrying
+forward, and the last day it appears on, so it doesn't vanish under your finger.
 
 ## Running it
 
