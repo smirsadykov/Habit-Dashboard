@@ -64,21 +64,30 @@ opening `index.html` as a `file://` URL works, but without offline caching or in
 
 ## Where the data lives
 
-`localStorage`, on the device you're using — the app works fully offline with no
-account and no server.
+`localStorage`, in the browser you're using. **Nothing you tick is in this
+repository and nothing is sent anywhere** — this repo is the app, not your
+history. It works offline, with no account and no server.
 
-### Syncing across devices
+Setup → **Backup** exports everything as one JSON file and imports it back. That
+is how you move to a new phone, switch browsers, or keep a copy somewhere safe.
 
-Setup → *Sync via GitHub* points the app at this repo. Every device holding the repo
-and a token shares one file, `data/daydesk.json`, which the app reads on load and
-writes a few seconds after any change.
+### Optional: syncing across devices
 
-1. Create a **fine-grained personal access token** scoped to this repository only,
-   with **Contents: Read and write** and nothing else.
-2. Paste the repo (`owner/name`), branch, and token into Setup.
+If you'd rather not move a file by hand, Setup → *Sync via GitHub* points the app at
+a repository of your own. Every device holding that repository and a token shares one
+`data/daydesk.json`, read on load and written a few seconds after any change.
 
-The token is held in that browser's `localStorage` and never committed — treat each
-device as holding a key to this repo, and revoke the token if you lose the device.
+It **must be a private repository — not this public one.** The app checks on every
+sync and refuses to write to a public repo, because that file is your whole history.
+
+1. Create a separate **private** repo.
+2. Create a **fine-grained personal access token** scoped to that repo only, with
+   **Contents: Read and write** and nothing else.
+3. Paste the repo (`owner/name`), branch, and token into Setup.
+
+The token is held in that browser's `localStorage`, never in this repository and
+never in the page. Treat each device as holding a key to that private repo, and
+revoke the token if you lose the device.
 
 **Merging** is per document. The file carries the time each document was last
 written; on each sync the newer side wins that document. Two devices editing
@@ -106,5 +115,5 @@ sw.js                   offline cache for the app shell + fonts
 icon-*.png              generated app icons
 test-merge.mjs          self-check for the sync merge
 test-schedule.mjs       self-check for habit schedules
-data/daydesk.json       created by the first sync
+data/                   only if you turn sync on, and never in this repo
 ```
