@@ -117,6 +117,11 @@ input[type=checkbox]{accent-color:var(--accent);width:17px;height:17px;margin:2p
 .kids li.row{padding:5px 4px;border-bottom:0}
 .kids .txt{font-size:14px}
 .count{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3);font-variant-numeric:tabular-nums;flex:none;align-self:center}
+/* not wanted today: still visible, but out of the count */
+li.row.off>label{opacity:.45}
+li.row.off input[type=checkbox]{accent-color:var(--ink-3)}
+.sched{font-family:var(--f-mono);font-size:11px;color:var(--ink-3);flex:none;align-self:center;white-space:nowrap}
+.cell .dot.skip{width:10px;height:2px;border-radius:2px;border:0;background:var(--ink-3)}
 
 /* ---- forms ---- */
 form.add{display:flex;gap:8px;flex-wrap:wrap}
@@ -256,6 +261,7 @@ header{padding-top:env(safe-area-inset-top)}
     <section>
       <div class="shead"><h2>Habits</h2><div class="meta" id="hmeta"></div></div>
       <ul id="habits"></ul>
+      <button class="link" id="skip" hidden></button>
     </section>
 
     <section>
@@ -296,6 +302,7 @@ header{padding-top:env(safe-area-inset-top)}
         <span><i style="display:inline-block;width:9px;height:9px;border-radius:100px;border:1.5px solid var(--ink-3)"></i> nothing ticked</span>
         <span><i style="display:inline-block;width:9px;height:9px;border-radius:100px;background:linear-gradient(var(--accent) 50%,transparent 50%);border:1.5px solid var(--accent)"></i> partial</span>
         <span><i style="display:inline-block;width:9px;height:9px;border-radius:100px;background:var(--accent)"></i> all habits</span>
+        <span><i style="display:inline-block;width:9px;height:2px;background:var(--ink-3)"></i> skipped</span>
         <span><i style="display:inline-block;width:14px;height:2px;background:var(--accent-ink)"></i> trained</span>
       </div>
     </section>
@@ -306,7 +313,9 @@ header{padding-top:env(safe-area-inset-top)}
   <form method="dialog" class="dwrap" id="setupform">
     <div>
       <h3>Daily habits</h3>
-      <p class="hint">One per line. Indent a line with two spaces to make it a sub-item — the parent ticks itself once every sub-item is done. Renaming an item starts its history over.</p>
+      <p class="hint">One per line. Indent two spaces to make it a sub-item — the parent ticks itself once every sub-item is done.
+        End a line with <code>@mon,wed,fri</code> for fixed days or <code>@3x</code> for three times a week; without one, a habit is daily.
+        Rewording a habit keeps its history as long as you don't add or remove lines in the same edit.</p>
       <textarea id="fhabits" rows="12"></textarea>
       <div class="field" style="margin-top:10px"><label for="fallow">Habits that may be missed and still keep the streak</label>
         <input type="number" id="fallow" min="0" max="20" step="1"></div>
@@ -429,21 +438,56 @@ function saveDay(s,patch){
   put("days/"+s,next);
   render();
 }
-/* a checklist is one block of text; an indented line is a sub-item of the line above */
-function parseTree(raw){
+/* A checklist is one block of text; an indented line is a sub-item of the line
+   above. A habit line may end with a schedule: "@mon,wed,fri" for fixed days,
+   "@3x" for three times a week on any days. The schedule is stripped out of the
+   name, so changing it never disturbs that habit's history. */
+const DOWKEY={sun:0,mon:1,tue:2,wed:3,thu:4,fri:5,sat:6};
+function parseSched(name){
+  const m=name.match(/\s+@([a-z0-9,]+)\s*$/i);
+  if(!m) return {name,sched:null};
+  const raw=m[1].toLowerCase(), clean=name.slice(0,m.index).trim();
+  const times=raw.match(/^(\d+)x$/);
+  if(times && +times[1]>0) return {name:clean,sched:{type:"week",n:+times[1]}};
+  const days=raw.split(",").map(d=>DOWKEY[d.slice(0,3)]).filter(d=>d!==undefined);
+  return days.length?{name:clean,sched:{type:"days",days}}:{name,sched:null};
+}
+function parseTree(raw,scheduled){
   const out=[];
   (raw||"").split("\n").forEach(line=>{
     if(!line.trim()) return;
-    const child=/^[\s\-•]/.test(line), name=line.replace(/^[\s\-•]+/,"").trim();
-    if(child && out.length) out[out.length-1].kids.push({name,key:out[out.length-1].name+"/"+name});
-    else out.push({name,key:name,kids:[]});
+    const child=/^[\s\-•]/.test(line), text=line.replace(/^[\s\-•]+/,"").trim();
+    const {name,sched}=scheduled?parseSched(text):{name:text,sched:null};
+    if(child && out.length) out[out.length-1].kids.push({name,sched,key:out[out.length-1].name+"/"+name});
+    else out.push({name,sched,key:name,kids:[]});
   });
   return out;
 }
-const leavesOf=tree=>tree.flatMap(h=>h.kids.length?h.kids:[h]);
-const habitTree=()=>parseTree(state.habits.text!==undefined?state.habits.text:(state.habits.items||[]).join("\n"));
+/* a sub-item with no schedule of its own follows its parent's */
+const leavesOf=tree=>tree.flatMap(h=>h.kids.length
+  ? h.kids.map(k=>k.sched?k:Object.assign({},k,{sched:h.sched}))
+  : [h]);
+
+/* the Monday-start week containing a date */
+function weekDays(s){
+  const start=shift(s,-((parseDate(s).getDay()+6)%7));
+  return Array.from({length:7},(_,i)=>shift(start,i));
+}
+/* Is this habit wanted on this day? habitsFor(dateStr) returns that day's ticks. */
+function dueOn(it,s,habitsFor){
+  const sc=it.sched;
+  if(!sc) return true;
+  if((habitsFor(s)||{})[it.key]) return true;          // already done: always show it
+  if(sc.type==="days") return sc.days.includes(parseDate(s).getDay());
+  const done=weekDays(s).filter(k=>k!==s&&(habitsFor(k)||{})[it.key]).length;
+  return done<sc.n;                                     // weekly quota not met yet
+}
+const habitTree=()=>parseTree(state.habits.text!==undefined?state.habits.text:(state.habits.items||[]).join("\n"),true);
 const leaves=()=>leavesOf(habitTree());
-const planTree=s=>parseTree(state.workout.days?.[parseDate(s).getDay()]||"");
+const planTree=s=>parseTree(state.workout.days?.[parseDate(s).getDay()]||"",false);
+const habitsFor=k=>day(k).habits||{};
+const dueLeaves=s=>leaves().filter(l=>dueOn(l,s,habitsFor));
+const skipped=s=>!!day(s).skip;
 const nsplit=v=>[v.slice(0,v.indexOf(":")),v.slice(v.indexOf(":")+1)];
 const STATUS=[["active","Active"],["hold","On hold"],["done","Done"]];
 const RANK={active:0,hold:1,done:2};
@@ -451,22 +495,28 @@ const projects=()=>(state.projects.items||[]).slice().sort((a,b)=>(RANK[a.status
 const proj=id=>(state.projects.items||[]).find(p=>p.id===id);
 
 function ratio(s){
-  const L=leaves(); if(!L.length) return 0;
+  const L=dueLeaves(s); if(!L.length) return 0;
   const done=day(s).habits||{};
   return L.filter(l=>done[l.key]).length/L.length;
 }
-/* a day keeps the streak while no more than `allow` habits are missed */
+/* a day keeps the streak while no more than `allow` of the habits due that day are missed */
 const allowMiss=()=>Math.max(0,+(state.habits.allow??1));
 function kept(s){
-  const L=leaves(); if(!L.length) return false;
+  const L=dueLeaves(s); if(!L.length) return false;
   const done=day(s).habits||{};
   return L.length-L.filter(l=>done[l.key]).length<=allowMiss();
 }
+/* A skipped day is neither kept nor broken — the chain passes straight through
+   it, so being ill or away costs nothing but doesn't earn a day either. */
 function streak(){
   if(!leaves().length) return 0;
-  let n=0,cur=iso(new Date());
-  if(!kept(cur)) cur=shift(cur,-1);
-  while(kept(cur)){n++;cur=shift(cur,-1)}
+  let n=0,cur=iso(new Date()),guard=0;
+  if(!skipped(cur)&&!kept(cur)) cur=shift(cur,-1);
+  while(guard++<3650){
+    if(skipped(cur)){ cur=shift(cur,-1); continue }
+    if(!kept(cur)) break;
+    n++; cur=shift(cur,-1);
+  }
   return n;
 }
 
@@ -510,23 +560,39 @@ function render(){
   renderCal();
 }
 
-function renderList(elId,tree,done,ns,emptyHtml){
-  const leaf=it=>'<li class="row'+(done[it.key]?" done":"")+'">'
-    +'<label><input type="checkbox" data-leaf="'+esc(ns+":"+it.key)+'"'+(done[it.key]?" checked":"")+'><span class="txt">'+esc(it.name)+"</span></label></li>";
+function renderList(elId,tree,done,ns,emptyHtml,isDue,noteFor){
+  const due=isDue||(()=>true), note=noteFor||(()=>"");
+  const leaf=it=>{
+    const off=!due(it), n=note(it);
+    return '<li class="row'+(done[it.key]?" done":"")+(off?" off":"")+'">'
+      +'<label><input type="checkbox" data-leaf="'+esc(ns+":"+it.key)+'"'+(done[it.key]?" checked":"")+'><span class="txt">'+esc(it.name)+"</span></label>"
+      +(n?'<span class="sched">'+esc(n)+"</span>":"")+"</li>";
+  };
   $(elId).innerHTML = tree.length ? tree.map(h=>{
     if(!h.kids.length) return leaf(h);
-    const n=h.kids.filter(k=>done[k.key]).length, all=n===h.kids.length;
-    return '<li class="row group'+(all?" done":"")+'">'
+    const kids=leavesOf([h]), open=kids.filter(due);
+    const n=open.filter(k=>done[k.key]).length, all=open.length>0&&n===open.length;
+    return '<li class="row group'+(all?" done":"")+(open.length?"":" off")+'">'
       +'<div style="display:flex;gap:10px;align-items:flex-start">'
       +'<label><input type="checkbox" data-parent="'+esc(ns+":"+h.name)+'"'+(all?" checked":"")+'><span class="txt">'+esc(h.name)+"</span></label>"
-      +'<span class="count">'+n+" / "+h.kids.length+"</span></div>"
-      +'<ul class="kids">'+h.kids.map(leaf).join("")+"</ul></li>";
+      +'<span class="count">'+(open.length?n+" / "+open.length:"—")+"</span></div>"
+      +'<ul class="kids">'+kids.map(leaf).join("")+"</ul></li>";
   }).join("") : emptyHtml;
+}
+/* why a habit is sitting out today */
+function schedNote(it,s){
+  const sc=it.sched; if(!sc) return "";
+  if(sc.type==="days"){
+    if(sc.days.includes(parseDate(s).getDay())) return "";
+    return sc.days.map(d=>DOW[d].toLowerCase()).join(" ");
+  }
+  const done=weekDays(s).filter(k=>habitsFor(k)[it.key]).length;
+  return done>=sc.n?"done this week":(sc.n-done)+" left this week";
 }
 
 function renderPips(){
   const s=state.date, d=day(s), tasks=d.tasks||[];
-  const hL=leaves(), hd=d.habits||{}, wL=leavesOf(planTree(s)), wd=d.workout||{};
+  const hL=dueLeaves(s), hd=d.habits||{}, wL=leavesOf(planTree(s)), wd=d.workout||{};
   const groups=[
     ["Habits",hL.filter(l=>hd[l.key]).length,hL.length],
     ["Workout",wL.filter(l=>wd[l.key]).length,wL.length],
@@ -541,9 +607,13 @@ function renderPips(){
 }
 
 function renderHabits(){
-  const d=day(state.date), done=d.habits||{}, L=leaves();
-  $("hmeta").textContent=L.length?L.filter(l=>done[l.key]).length+" / "+L.length:"";
-  renderList("habits",habitTree(),done,"h",'<li class="empty">No habits yet — add them under <b>Setup</b>.</li>');
+  const s=state.date, d=day(s), done=d.habits||{}, L=dueLeaves(s);
+  $("hmeta").textContent = skipped(s) ? "skipped"
+    : L.length ? L.filter(l=>done[l.key]).length+" / "+L.length : "";
+  $("skip").textContent = skipped(s) ? "Skipped — count this day again" : "Skip this day";
+  $("skip").hidden = !leaves().length;
+  renderList("habits",habitTree(),done,"h",'<li class="empty">No habits yet — add them under <b>Setup</b>.</li>',
+    it=>dueOn(it,s,habitsFor), it=>schedNote(it,s));
 }
 
 function renderWorkout(){
@@ -588,11 +658,12 @@ function renderCal(){
   for(let i=0;i<first;i++) html+='<div class="cell blank"></div>';
   let logged=0;
   for(let n=1;n<=len;n++){
-    const s=iso(new Date(y,mo,n)), r=ratio(s), d=day(s);
+    const s=iso(new Date(y,mo,n)), r=ratio(s), d=day(s), skip=skipped(s);
     const trained=Object.values(d.workout||{}).some(Boolean);
-    if(r>0||trained||(d.tasks||[]).length) logged++;
+    if(r>0||trained||skip||(d.tasks||[]).length) logged++;
     html+='<button class="cell'+(s===today?" today":"")+(s===state.date?" sel":"")+'" data-day="'+s+'">'
-      +'<span class="d">'+n+'</span><span class="dot'+(r>=1?" full":r>0?" part":"")+'"></span>'
+      +'<span class="d">'+n+'</span>'
+      +(skip?'<span class="dot skip"></span>':'<span class="dot'+(r>=1?" full":r>0?" part":"")+'"></span>')
       +(trained?'<span class="w"></span>':"")+"</button>";
   }
   $("cal").innerHTML=html;
@@ -615,7 +686,10 @@ document.addEventListener("change",e=>{
   else if(t.dataset.parent!==undefined){
     const [ns,name]=nsplit(t.dataset.parent), f=ns==="h"?"habits":"workout";
     const tree=ns==="h"?habitTree():planTree(s), next=Object.assign({},d[f]);
-    (tree.find(x=>x.name===name)||{kids:[]}).kids.forEach(k=>next[k.key]=t.checked);
+    const group=tree.find(x=>x.name===name);
+    leavesOf(group?[group]:[])
+      .filter(k=>ns!=="h"||dueOn(k,s,habitsFor))
+      .forEach(k=>next[k.key]=t.checked);
     saveDay(s,{[f]:next});
   }
   else if(t.dataset.task!==undefined) saveDay(s,{tasks:(d.tasks||[]).map((x,i)=>i==t.dataset.task?Object.assign({},x,{done:t.checked}):x)});
@@ -650,6 +724,7 @@ function openEarlier(){
     (state.days[k].tasks||[]).forEach((t,i)=>{ if(!t.done) out.push({date:k,i,t}) }));
   return out;
 }
+$("skip").onclick=()=>saveDay(state.date,{skip:!skipped(state.date)});
 $("carry").onclick=()=>{
   const items=openEarlier(); if(!items.length) return;
   const by={};
@@ -669,9 +744,28 @@ $("settings").onclick=()=>{
   DOWFULL.forEach((_,i)=>$("fd"+i).value=state.workout.days?.[i]||"");
   $("dlg").showModal();
 };
+/* Editing a habit's wording would otherwise orphan every tick recorded under the
+   old wording. When the list is the same shape and only wording changed, carry
+   the history across; anything else (added or removed habits) is left alone. */
+function renameHistory(before,after){
+  if(before.length!==after.length) return 0;
+  const pairs=before.map((k,i)=>[k,after[i]]).filter(([o,n])=>o!==n);
+  if(!pairs.length) return 0;
+  let moved=0;
+  Object.keys(state.days).forEach(s=>{
+    const h=Object.assign({},state.days[s].habits||{});
+    let touched=false;
+    pairs.forEach(([o,n])=>{ if(o in h){ h[n]=h[o]; delete h[o]; touched=true; moved++ } });
+    if(touched) saveDay(s,{habits:h});
+  });
+  return moved;
+}
+
 $("setupform").onsubmit=e=>{
   if(e.submitter && e.submitter.value!=="save") return;
+  const before=leaves().map(l=>l.key);
   state.habits={text:$("fhabits").value,allow:Math.max(0,+$("fallow").value||0)};
+  renameHistory(before,leaves().map(l=>l.key));
   state.creed={text:$("fcreed").value.trim()};
   const days={}; DOWFULL.forEach((_,i)=>days[i]=$("fd"+i).value.trim());
   state.workout={days};

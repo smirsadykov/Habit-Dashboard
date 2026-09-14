@@ -1,5 +1,5 @@
 /* Bump CACHE when the app shell changes — that is what ships an update. */
-const CACHE = "daydesk-v1";
+const CACHE = "daydesk-v2";
 const SHELL = [
   "./",
   "./index.html",
