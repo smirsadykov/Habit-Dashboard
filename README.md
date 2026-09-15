@@ -103,8 +103,13 @@ store and skips GitHub entirely. It picks whichever is available at load.
 
 ## Shipping a change
 
-Edit `index.html`, then bump `CACHE` in `sw.js` — installed copies keep serving the
-old shell from cache until that version string changes.
+Edit `index.html`, then bump `CACHE` in `sw.js`. The page is fetched network-first,
+so an online device gets the new version on its next open; the cache is only the
+offline fallback. Bumping `CACHE` is what refreshes the icons, manifest and fonts,
+and a device that picks up a new worker reloads itself once to apply it.
+
+A copy installed before this behaviour existed is still serving its old cache. Open
+the site in the browser (not the installed app), reload twice, and it will catch up.
 
 ## Layout
 

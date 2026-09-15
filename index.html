@@ -914,8 +914,17 @@ $("ffile").onchange=async e=>{
 render();
 connect();
 
-if("serviceWorker" in navigator && location.protocol.startsWith("http"))
+if("serviceWorker" in navigator && location.protocol.startsWith("http")){
+  /* When a new worker takes over, pick up its version straight away instead of
+     leaving the old page on screen until someone reloads twice. */
+  const hadController=!!navigator.serviceWorker.controller;
+  let reloading=false;
+  navigator.serviceWorker.addEventListener("controllerchange",()=>{
+    if(reloading||!hadController) return;
+    reloading=true; location.reload();
+  });
   addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+}
 </script>
 </body>
 </html>
