@@ -8,6 +8,7 @@ Static files, no build step, no dependencies. Installable as a PWA and works off
 | Block | What it does |
 |---|---|
 | Affirmation | A standing line across the top of every day |
+| Focus | One habit for thirty days: a strip of the days so far, won or lost |
 | Habits | Nested checkboxes, per-habit schedules, skippable days, a streak that tolerates N misses |
 | Tasks | Written on a day, carried until ticked; every task belongs to a project |
 | Workout | Today's items from a weekly plan |
@@ -30,6 +31,11 @@ Gym @mon,wed                a schedule on a parent is inherited by its sub-items
 
 A habit that isn't wanted today still shows, greyed and out of the count, with the
 reason beside it (`mon thu`, `1 left this week`). Weeks run Monday to Sunday.
+
+**Focus** picks one habit and a start date in Setup. It sits under the affirmation
+with a strip of the thirty days: green when ticked, red when it was due and missed,
+grey when the day was skipped or the habit wasn't due. When the strip fills, pick
+the next one. `node test-focus.mjs` checks the counting.
 
 **Skip this day** marks a day neutral — ill, travelling. The streak passes straight
 through it: it costs nothing and earns nothing.
