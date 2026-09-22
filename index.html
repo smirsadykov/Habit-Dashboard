@@ -326,7 +326,8 @@ header{padding-top:env(safe-area-inset-top)}
     <div>
       <h3>Daily habits</h3>
       <p class="hint">One per line. Indent two spaces to make it a sub-item — the parent ticks itself once every sub-item is done.
-        End a line with <code>@mon,wed,fri</code> for fixed days or <code>@3x</code> for three times a week; without one, a habit is daily.
+        End a line with <code>@mon,wed,fri</code> for fixed days, <code>@3x</code> for three times a week, or <code>@30/30</code>
+        for a course — thirty days on, thirty days off, counted from the first day you ticked it. Without one, a habit is daily.
         Rewording a habit keeps its history as long as you don't add or remove lines in the same edit.</p>
       <textarea id="fhabits" rows="12"></textarea>
       <div class="field" style="margin-top:10px"><label for="fallow">Habits that may be missed and still keep the streak</label>
@@ -465,15 +466,18 @@ function saveDay(s,patch){
 }
 /* A checklist is one block of text; an indented line is a sub-item of the line
    above. A habit line may end with a schedule: "@mon,wed,fri" for fixed days,
-   "@3x" for three times a week on any days. The schedule is stripped out of the
+   "@3x" for three times a week on any days, or "@30/30" for a course — thirty
+   days on, thirty days off, repeating. The schedule is stripped out of the
    name, so changing it never disturbs that habit's history. */
 const DOWKEY={sun:0,mon:1,tue:2,wed:3,thu:4,fri:5,sat:6};
 function parseSched(name){
-  const m=name.match(/\s+@([a-z0-9,]+)\s*$/i);
+  const m=name.match(/\s+@([a-z0-9,/]+)\s*$/i);
   if(!m) return {name,sched:null};
   const raw=m[1].toLowerCase(), clean=name.slice(0,m.index).trim();
   const times=raw.match(/^(\d+)x$/);
   if(times && +times[1]>0) return {name:clean,sched:{type:"week",n:+times[1]}};
+  const cycle=raw.match(/^(\d+)\/(\d+)$/);
+  if(cycle && +cycle[1]>0 && +cycle[2]>0) return {name:clean,sched:{type:"cycle",on:+cycle[1],off:+cycle[2]}};
   const days=raw.split(",").map(d=>DOWKEY[d.slice(0,3)]).filter(d=>d!==undefined);
   return days.length?{name:clean,sched:{type:"days",days}}:{name,sched:null};
 }
@@ -488,9 +492,11 @@ function parseTree(raw,scheduled){
   });
   return out;
 }
-/* a sub-item with no schedule of its own follows its parent's */
+/* A sub-item with no schedule of its own follows its parent's, and remembers
+   whose it is: a course belongs to the group, so three vitamins first ticked on
+   three different days still run as one course. */
 const leavesOf=tree=>tree.flatMap(h=>h.kids.length
-  ? h.kids.map(k=>k.sched?k:Object.assign({},k,{sched:h.sched}))
+  ? h.kids.map(k=>k.sched?k:Object.assign({},k,{sched:h.sched,owner:h.sched?h.key:undefined}))
   : [h]);
 
 /* the Monday-start week containing a date */
@@ -498,12 +504,24 @@ function weekDays(s){
   const start=shift(s,-((parseDate(s).getDay()+6)%7));
   return Array.from({length:7},(_,i)=>shift(start,i));
 }
-/* Is this habit wanted on this day? habitsFor(dateStr) returns that day's ticks. */
-function dueOn(it,s,habitsFor){
+/* How far into a course a day falls, counting from the first day it was ever
+   ticked. Null until the course has been started at all. */
+function cyclePhase(sc,s,anchor){
+  if(!anchor) return null;
+  const n=Math.round((parseDate(s)-parseDate(anchor))/864e5);
+  return n<0?null:n%(sc.on+sc.off);
+}
+/* Is this habit wanted on this day? habitsFor(dateStr) returns that day's ticks;
+   firstTick(key) the first day it was ever ticked, which anchors a course. */
+function dueOn(it,s,habitsFor,firstTick){
   const sc=it.sched;
   if(!sc) return true;
   if((habitsFor(s)||{})[it.key]) return true;          // already done: always show it
   if(sc.type==="days") return sc.days.includes(parseDate(s).getDay());
+  if(sc.type==="cycle"){
+    const p=cyclePhase(sc,s,firstTick&&firstTick(it.owner||it.key));
+    return p===null||p<sc.on;                           // not started yet, or on
+  }
   const done=weekDays(s).filter(k=>k!==s&&(habitsFor(k)||{})[it.key]).length;
   return done<sc.n;                                     // weekly quota not met yet
 }
@@ -511,7 +529,25 @@ const habitTree=()=>parseTree(state.habits.text!==undefined?state.habits.text:(s
 const leaves=()=>leavesOf(habitTree());
 const planTree=s=>parseTree(state.workout.days?.[parseDate(s).getDay()]||"",false);
 const habitsFor=k=>day(k).habits||{};
-const dueLeaves=s=>leaves().filter(l=>dueOn(l,s,habitsFor));
+/* first day each habit was ever ticked; rebuilt once per render */
+let firstTicks=null;
+function firstTickOf(key){
+  if(!firstTicks){
+    firstTicks={};
+    Object.keys(state.days).sort().forEach(k=>{
+      const h=state.days[k].habits||{};
+      Object.keys(h).forEach(x=>{ if(h[x]&&!(x in firstTicks)) firstTicks[x]=k });
+    });
+    /* a group's course starts the day any of its members first did */
+    leaves().forEach(l=>{
+      const f=firstTicks[l.key];
+      if(l.owner&&f&&(!(l.owner in firstTicks)||f<firstTicks[l.owner])) firstTicks[l.owner]=f;
+    });
+  }
+  return firstTicks[key]||null;
+}
+const isDueOn=(it,s)=>dueOn(it,s,habitsFor,firstTickOf);
+const dueLeaves=s=>leaves().filter(l=>isDueOn(l,s));
 const skipped=s=>!!day(s).skip;
 const nsplit=v=>[v.slice(0,v.indexOf(":")),v.slice(v.indexOf(":")+1)];
 const STATUS=[["active","Active"],["hold","On hold"],["done","Done"]];
@@ -580,6 +616,7 @@ function patchTask(ref,fields){
 
 /* ---------- render ---------- */
 function render(){
+  firstTicks=null;
   const s=state.date, d=day(s), today=iso(new Date());
 
   $("dlabel").textContent = s===today ? "Today · "+parseDate(s).toLocaleDateString(undefined,{month:"short",day:"numeric"})
@@ -639,6 +676,11 @@ function renderList(elId,tree,done,ns,emptyHtml,isDue,noteFor){
 /* why a habit is sitting out today */
 function schedNote(it,s){
   const sc=it.sched; if(!sc) return "";
+  if(sc.type==="cycle"){
+    const p=cyclePhase(sc,s,firstTickOf(it.owner||it.key));
+    if(p===null) return "day 1 of "+sc.on;
+    return p<sc.on ? "day "+(p+1)+" of "+sc.on : "break · "+(sc.on+sc.off-p)+" days left";
+  }
   if(sc.type==="days"){
     if(sc.days.includes(parseDate(s).getDay())) return "";
     return sc.days.map(d=>DOW[d].toLowerCase()).join(" ");
@@ -650,7 +692,7 @@ function schedNote(it,s){
 function renderFocus(){
   const f=state.focus||{}, leaf=leaves().find(l=>l.key===f.habit), el=$("focus");
   el.hidden=!(leaf&&f.start); if(el.hidden) return;
-  const st=focusStats(f,iso(new Date()),k=>!!habitsFor(k)[f.habit],skipped,k=>dueOn(leaf,k,habitsFor));
+  const st=focusStats(f,iso(new Date()),k=>!!habitsFor(k)[f.habit],skipped,k=>isDueOn(leaf,k));
   const label=!st.n?"starts "+f.start:st.over?st.won+" / 30 won — pick the next one":"day "+st.n+" / 30 · "+st.won+" won";
   el.innerHTML='<span class="plabel">Focus</span><span class="ftxt">'+esc(leaf.name)+'</span>'
     +'<span class="segs">'+st.days.map(x=>'<i class="'+x+'"></i>').join("")+"<i></i>".repeat(FOCUS_DAYS-st.n)+'</span>'
@@ -680,7 +722,7 @@ function renderHabits(){
   $("skip").textContent = skipped(s) ? "Skipped — count this day again" : "Skip this day";
   $("skip").hidden = !leaves().length;
   renderList("habits",habitTree(),done,"h",'<li class="empty">No habits yet — add them under <b>Setup</b>.</li>',
-    it=>dueOn(it,s,habitsFor), it=>schedNote(it,s));
+    it=>isDueOn(it,s), it=>schedNote(it,s));
 }
 
 function renderWorkout(){
@@ -755,7 +797,7 @@ document.addEventListener("change",e=>{
     const tree=ns==="h"?habitTree():planTree(s), next=Object.assign({},d[f]);
     const group=tree.find(x=>x.name===name);
     leavesOf(group?[group]:[])
-      .filter(k=>ns!=="h"||dueOn(k,s,habitsFor))
+      .filter(k=>ns!=="h"||isDueOn(k,s))
       .forEach(k=>next[k.key]=t.checked);
     saveDay(s,{[f]:next});
   }

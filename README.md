@@ -24,13 +24,22 @@ once its sub-items are done.
 Read affirmations           every day
 Sauna @mon,thu              only those weekdays
 Long run @2x                twice a week, any days
+Take vitamins @30/30        a course: 30 days on, 30 days off, repeating
+  Vitamin D
+  Omega-3
 Gym @mon,wed                a schedule on a parent is inherited by its sub-items
   Squats
   Bench @tue                unless the sub-item sets its own
 ```
 
 A habit that isn't wanted today still shows, greyed and out of the count, with the
-reason beside it (`mon thu`, `1 left this week`). Weeks run Monday to Sunday.
+reason beside it (`mon thu`, `1 left this week`, `break · 27 days left`). Weeks run
+Monday to Sunday.
+
+A **course** (`@30/30`, or any on/off pair) counts from the first day you ticked it,
+so it starts when you actually start. Sub-items share their parent's course — three
+vitamins first ticked on three different days still run as one course, off the
+earliest of them. To move the start, tick the habit on the day you want it to begin.
 
 **Focus** picks one habit and a start date in Setup. It sits under the affirmation
 with a strip of the thirty days: green when ticked, red when it was due and missed,

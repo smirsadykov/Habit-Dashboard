@@ -21,11 +21,12 @@ const source = [
   grab(/function parseTree\(raw,scheduled\)\{[\s\S]*?\n\}/, "parseTree"),
   grab(/const leavesOf=tree=>[\s\S]*?\n  : \[h\]\);/, "leavesOf"),
   grab(/function weekDays\(s\)\{[\s\S]*?\n\}/, "weekDays"),
-  grab(/function dueOn\(it,s,habitsFor\)\{[\s\S]*?\n\}/, "dueOn"),
+  grab(/function cyclePhase\(sc,s,anchor\)\{[\s\S]*?\n\}/, "cyclePhase"),
+  grab(/function dueOn\(it,s,habitsFor,firstTick\)\{[\s\S]*?\n\}/, "dueOn"),
 ].join("\n");
 
-const { parseSched, parseTree, leavesOf, dueOn, weekDays } =
-  new Function(source + "\nreturn {parseSched,parseTree,leavesOf,dueOn,weekDays};")();
+const { parseSched, parseTree, leavesOf, dueOn, weekDays, cyclePhase } =
+  new Function(source + "\nreturn {parseSched,parseTree,leavesOf,dueOn,weekDays,cyclePhase};")();
 
 // 2026-09-14 is a Monday
 const MON = "2026-09-14", TUE = "2026-09-15", WED = "2026-09-16", SUN = "2026-09-20";
@@ -87,3 +88,40 @@ assert.equal(isKept(1, 0, 1), false, "a blank day never counts, even when the al
 assert.equal(isKept(0, 0, 1), false, "no habits due is not a kept day");
 assert.equal(isKept(3, 3, 0), true, "a perfect day with no allowance");
 console.log("streak: 5 checks passed");
+
+/* --- a course: N days on, N days off, anchored to the first tick --- */
+const vits = leavesOf(parseTree("Take vitamins @30/30\n  Vitamin D\n  Omega-3", true));
+assert.deepEqual(vits[0].sched, { type: "cycle", on: 30, off: 30 }, "sub-items inherit the course");
+assert.equal(vits[0].key, "Take vitamins/Vitamin D", "the course leaves the name alone");
+
+const START = "2026-09-22";
+const at = n => { const d = new Date(2026, 8, 22); d.setDate(d.getDate() + n); return d.toLocaleDateString("en-CA"); };
+const anchor = () => START;
+
+assert.equal(dueOn(vits[0], START, none, anchor), true, "day 1: on");
+assert.equal(dueOn(vits[0], at(29), none, anchor), true, "day 30: last day on");
+assert.equal(dueOn(vits[0], at(30), none, anchor), false, "day 31: the break starts");
+assert.equal(dueOn(vits[0], at(59), none, anchor), false, "day 60: last day of the break");
+assert.equal(dueOn(vits[0], at(60), none, anchor), true, "day 61: the next course starts");
+assert.equal(dueOn(vits[0], at(89), none, anchor), true, "day 90: still on");
+assert.equal(dueOn(vits[0], at(90), none, anchor), false, "day 91: break again");
+
+assert.equal(dueOn(vits[0], START, none, () => null), true, "never ticked: the course has not started");
+assert.equal(dueOn(vits[0], "2026-09-01", none, anchor), true, "before the anchor, nothing to withhold");
+assert.equal(dueOn(vits[0], at(40), d => (d === at(40) ? { "Take vitamins/Vitamin D": true } : {}), anchor), true,
+  "taken during the break anyway: still shown, so it can be un-ticked");
+
+assert.equal(cyclePhase({ on: 30, off: 30 }, at(45), START), 45, "phase counts from the anchor");
+assert.equal(cyclePhase({ on: 30, off: 30 }, at(60), START), 0, "phase wraps at on+off");
+assert.equal(cyclePhase({ on: 30, off: 30 }, at(5), null), null, "no anchor, no phase");
+
+assert.equal(vits[0].owner, "Take vitamins", "a sub-item on an inherited course belongs to the group");
+assert.equal(vits[1].owner, "Take vitamins");
+assert.equal(dueOn(vits[1], at(30), none, k => (k === "Take vitamins" ? START : null)), false,
+  "the course is anchored on the group, not on whichever vitamin was ticked first");
+assert.equal(leavesOf(parseTree("Gym @mon\n  Squats", true))[0].owner, "Gym", "inherited day schedules group too");
+assert.equal(leavesOf(parseTree("Gym\n  Squats @mon", true))[0].owner, undefined, "its own schedule, its own anchor");
+
+assert.deepEqual(parseSched("Creatine @5/2").sched, { type: "cycle", on: 5, off: 2 }, "any on/off pair");
+assert.equal(parseSched("Notes @home/work").sched, null, "a slash that isn't two numbers is just text");
+console.log("course: 21 checks passed");
