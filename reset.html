@@ -42,6 +42,8 @@ a{color:inherit}
 
 <script>
 const $ = id => document.getElementById(id);
+const appScope = new URL("./", location.href).href;
+const mine = r => r.scope === appScope;
 const rows = [];
 const add = (k, v, cls) => { rows.push({ k, v, cls }); paint() };
 const paint = () => {
@@ -63,11 +65,12 @@ const paint = () => {
   add("Server has", live);
 
   // What this device is actually holding.
-  const names = "caches" in window ? await caches.keys() : [];
+  // this app's caches only — other apps on the same site have their own
+  const names = "caches" in window ? (await caches.keys()).filter(n => n.startsWith("daydesk-")) : [];
   add("This device has", names.length ? names.join(", ") : "nothing cached",
       names.length && !names.includes(live) ? "bad" : "ok");
 
-  const regs = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistrations() : [];
+  const regs = "serviceWorker" in navigator ? (await navigator.serviceWorker.getRegistrations()).filter(mine) : [];
   add("Workers", regs.length ? regs.length + " registered" : "none");
 
   const stale = names.length && live !== "unknown" && !names.includes(live);
@@ -80,12 +83,13 @@ $("go").onclick = async () => {
   $("go").disabled = true;
   $("go").textContent = "Clearing…";
   try {
+    // only this app's worker and caches: the kettlebell app lives on the same site
     if ("serviceWorker" in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations();
+      const regs = (await navigator.serviceWorker.getRegistrations()).filter(mine);
       await Promise.all(regs.map(r => r.unregister()));
     }
     if ("caches" in window) {
-      const names = await caches.keys();
+      const names = (await caches.keys()).filter(n => n.startsWith("daydesk-"));
       await Promise.all(names.map(n => caches.delete(n)));
     }
   } catch (e) { /* clear as much as we can, then reload regardless */ }

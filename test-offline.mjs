@@ -39,16 +39,22 @@ async function run(visitResetFirst) {
     const go = async url => { events.length = 0; await cdp("Page.navigate", { url }); for (let i = 0; i < 60 && !events.includes("Page.loadEventFired"); i++) await sleep(100); await sleep(400) };
 
     await cdp("Page.enable"); await cdp("Runtime.enable"); await cdp("Network.enable");
+    // another app on the same site already has its offline copy here
+    await go(base + "README.md");
+    await js(`caches.open("kbd-v73").then(c=>c.put("/probe",new Response("kb")))`);
     await go(base);
     for (let i = 0; i < 50 && !(await js(`navigator.serviceWorker.getRegistration().then(r=>!!(r&&r.active))`)); i++) await sleep(200);
+    const neighbourSurvives = (await js(`caches.keys()`)).includes("kbd-v73");
     if (visitResetFirst) await go(base + "reset.html");
     await cdp("Network.clearBrowserCache");
     server.kill(); await sleep(500);
     await go(base);
-    return (await js("document.title")) === "Day Desk" && (await js("!!document.getElementById('habits')"));
+    return { opens: (await js("document.title")) === "Day Desk" && (await js("!!document.getElementById('habits')")), neighbourSurvives };
   } finally { server.kill(); chrome.kill() }
 }
 
 const plain = await run(false), afterReset = await run(true);
-console.log(`offline: app opens with no network ${plain ? "✓" : "✗"} · and after visiting reset.html ${afterReset ? "✓" : "✗"}`);
-process.exit(plain && afterReset ? 0 : 1);
+const mark = b => (b ? "✓" : "✗");
+console.log(`offline: app opens with no network ${mark(plain.opens)} · and after visiting reset.html ${mark(afterReset.opens)}`
+  + ` · another app's offline copy survives this one installing ${mark(plain.neighbourSurvives)}`);
+process.exit(plain.opens && afterReset.opens && plain.neighbourSurvives ? 0 : 1);

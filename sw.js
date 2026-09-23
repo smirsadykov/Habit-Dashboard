@@ -1,5 +1,5 @@
 /* Bump CACHE when the app shell changes — that is what ships an update. */
-const CACHE = "daydesk-v13";
+const CACHE = "daydesk-v14";
 const SHELL = [
   "./",
   "./index.html",
@@ -17,10 +17,13 @@ self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 
+/* Only this app's own old caches. Everything on smirsadykov.github.io shares one
+   cache store, so "delete whatever isn't mine" was deleting the kettlebell app's
+   offline copy on every update here — and its worker did the same to this one. */
 self.addEventListener("activate", e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k.startsWith("daydesk-") && k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
