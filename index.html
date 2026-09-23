@@ -136,6 +136,12 @@ input[type=checkbox]{accent-color:var(--accent);width:17px;height:17px;margin:2p
 .kids li.row{padding:5px 4px;border-bottom:0}
 .kids .txt{font-size:14px}
 .count{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3);font-variant-numeric:tabular-nums;flex:none;align-self:center}
+/* a section heading inside the habit list: morning, evening */
+li.sect{display:flex;align-items:baseline;gap:10px;padding:14px 4px 5px;border-bottom:1px solid var(--line)}
+li.sect:first-child{padding-top:0}
+li.sect.folded{border-bottom:0;padding-bottom:0}
+.sname{font-family:var(--f-mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+li.sect .count,li.sect .link{margin-left:auto}
 /* not wanted today: still visible, but out of the count */
 li.row.off>label{opacity:.45}
 li.row.off input[type=checkbox]{accent-color:var(--ink-3)}
@@ -145,7 +151,7 @@ li.row.off input[type=checkbox]{accent-color:var(--ink-3)}
 
 /* ---- forms ---- */
 form.add{display:flex;gap:8px;flex-wrap:wrap}
-input[type=text],input[type=number],input[type=date],textarea,select.plain{background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:7px 10px}
+input[type=text],input[type=number],input[type=date],input[type=time],textarea,select.plain{background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:7px 10px}
 input[type=text]{flex:1;min-width:120px}
 input[type=number]{width:88px;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 .btn{background:var(--accent);color:var(--on-accent);border:0;border-radius:var(--r);padding:7px 14px;font-weight:600;cursor:pointer}
@@ -340,6 +346,8 @@ header{padding-top:env(safe-area-inset-top)}
     <div>
       <h3>Daily habits</h3>
       <p class="hint">One per line. Indent two spaces to make it a sub-item — the parent ticks itself once every sub-item is done.
+        A line starting <code>#</code> is a heading: <code># Evening @18</code> keeps what's under it folded until 18:00, so an
+        end-of-day check isn't ticked as a guess in the morning.
         End a line with <code>@mon,wed,fri</code> for fixed days, <code>@3x</code> for three times a week, or <code>@30/30</code>
         for a course — thirty days on, thirty days off, counted from the first day you ticked it — or <code>@30d</code> for a run of
         thirty days held without a break, which starts over if you miss one. Without a schedule, a habit is simply daily.
@@ -378,6 +386,17 @@ header{padding-top:env(safe-area-inset-top)}
       <div class="field"><label for="stoken">Access token</label><input type="password" id="stoken" placeholder="github_pat_…" autocomplete="off"></div>
     </div>
     <div>
+      <h3>Reminder</h3>
+      <p class="hint">A daily event in your phone's calendar, which does the reminding — this app has no server to send
+        notifications from. Add one for the morning and one for the evening if you like; adding the same time again
+        replaces the old one.</p>
+      <div class="dataio">
+        <input type="time" id="ftime" value="21:00" aria-label="Reminder time">
+        <button type="button" class="btn quiet" id="fics">Add to calendar</button>
+        <span class="hint" id="fics-note" style="margin:0"></span>
+      </div>
+    </div>
+    <div>
       <h3>Backup</h3>
       <p class="hint" id="fbackup"></p>
       <p class="hint">Everything you tick lives in this browser. Export it to move to another device or another browser, and import the file there.</p>
@@ -412,7 +431,8 @@ const state={
   workout:{days:{}},
   creed:{text:""},
   focus:{habit:"",start:""},
-  projects:{items:[]}
+  projects:{items:[]},
+  openSects:{}
 };
 
 /* ---------- store: db when the viewer can run it, otherwise this device ---------- */
@@ -456,7 +476,6 @@ function note(msg){ $("offline").innerHTML='<div class="warnbar">'+esc(msg)+"</d
    until the lines exist — this writes them. Idempotent: a line already present
    in any wording is left alone, and a flag stops it ever running twice, so a
    habit they later delete stays deleted. */
-const MIGRATION="2026-09-23-courses-and-runs";
 function addRequestedHabits(text){
   const lines=(text||"").replace(/\s+$/,"").split("\n");
   const has=re=>re.test(text||"");
@@ -466,10 +485,34 @@ function addRequestedHabits(text){
   if(!has(/аскез|abstinence|кальян|hookah/i)) lines.push("Аскеза @30d","  Без кальяна","  Без порно","  Без лишних трат");
   return lines.filter((l,i)=>i>0||l.trim()).join("\n");
 }
+/* Split the list into a morning section and an evening one. What belongs in the
+   evening is what can only be known at the end of the day: whether an
+   abstinence run held, and what got achieved. Everything else keeps its order
+   under Morning. Leaves a list that already has sections alone. */
+function addSections(text){
+  if(/^#/m.test(text||"")) return text;
+  const blocks=[];
+  (text||"").replace(/\s+$/,"").split("\n").forEach(l=>{
+    if(/^\S/.test(l)||!blocks.length) blocks.push([l]); else blocks[blocks.length-1].push(l);
+  });
+  const evening=b=>/достижени|achievement/i.test(b[0])||/\s@\d+d\s*$/.test(b[0]);
+  const eve=blocks.filter(evening), day=blocks.filter(b=>!evening(b));
+  if(!eve.length||!day.length) return text;
+  return ["# Morning",...day.flat(),"# Evening @18",...eve.flat()].join("\n");
+}
+/* Each runs once, in order; the ids of the ones applied travel with the list. */
+const MIGRATIONS=[
+  ["2026-09-23-courses-and-runs",addRequestedHabits],
+  ["2026-09-24-morning-evening",addSections],
+];
 function applyMigrations(){
   const h=state.habits||{}, text=h.text!==undefined?h.text:(h.items||[]).join("\n");
-  if(!text.trim()||(h.migrated||[]).includes(MIGRATION)) return false;
-  const next=Object.assign({},h,{text:addRequestedHabits(text),migrated:(h.migrated||[]).concat(MIGRATION)});
+  const applied=h.migrated||[], todo=MIGRATIONS.filter(m=>!applied.includes(m[0]));
+  if(!text.trim()||!todo.length) return false;
+  const next=Object.assign({},h,{
+    text:todo.reduce((t,m)=>m[1](t),text),
+    migrated:applied.concat(todo.map(m=>m[0])),
+  });
   delete next.items;
   state.habits=next;
   put("config/habits",next);
@@ -527,13 +570,25 @@ function parseSched(name){
   const days=raw.split(",").map(d=>DOWKEY[d.slice(0,3)]).filter(d=>d!==undefined);
   return days.length?{name:clean,sched:{type:"days",days}}:{name,sched:null};
 }
+/* "# Evening @18" starts a section: a heading, and — for today, before that
+   hour — the habits under it stay folded, so an end-of-day check can't be
+   ticked as a guess at breakfast. Sections never touch a habit's key. */
+function parseHeader(text){
+  const m=text.match(/^#\s*(.*?)(?:\s+@(\d{1,2})(?::(\d{2}))?)?\s*$/);
+  if(!m||!m[1]) return null;
+  const opens=m[2]!==undefined&&+m[2]<24?(+m[2])*60+(+(m[3]||0)):null;
+  return {header:true,name:m[1],opens,key:"#"+m[1],kids:[]};
+}
 function parseTree(raw,scheduled){
   const out=[];
   (raw||"").split("\n").forEach(line=>{
     if(!line.trim()) return;
     const child=/^[\s\-•]/.test(line), text=line.replace(/^[\s\-•]+/,"").trim();
+    const hdr=scheduled&&!child?parseHeader(text):null;
+    if(hdr) return void out.push(hdr);
     const {name,sched}=scheduled?parseSched(text):{name:text,sched:null};
-    if(child && out.length) out[out.length-1].kids.push({name,sched,key:out[out.length-1].name+"/"+name});
+    const parent=out[out.length-1];
+    if(child && parent && !parent.header) parent.kids.push({name,sched,key:parent.name+"/"+name});
     else out.push({name,sched,key:name,kids:[]});
   });
   return out;
@@ -541,7 +596,7 @@ function parseTree(raw,scheduled){
 /* A sub-item with no schedule of its own follows its parent's, and remembers
    whose it is: a course belongs to the group, so three vitamins first ticked on
    three different days still run as one course. */
-const leavesOf=tree=>tree.flatMap(h=>h.kids.length
+const leavesOf=tree=>tree.flatMap(h=>h.header?[]:h.kids.length
   ? h.kids.map(k=>k.sched?k:Object.assign({},k,{sched:h.sched,owner:h.sched?h.key:undefined}))
   : [h]);
 
@@ -712,16 +767,16 @@ function render(){
   renderCal();
 }
 
-function renderList(elId,tree,done,ns,emptyHtml,isDue,noteFor){
-  const due=isDue||(()=>true), note=noteFor||(()=>"");
+const hhmm=m=>String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
+function renderList(elId,tree,done,ns,emptyHtml,isDue,noteFor,isFolded){
+  const due=isDue||(()=>true), note=noteFor||(()=>""), folded=isFolded||(()=>false);
   const leaf=it=>{
     const off=!due(it), n=note(it);
     return '<li class="row'+(done[it.key]?" done":"")+(off?" off":"")+'">'
       +'<label><input type="checkbox" data-leaf="'+esc(ns+":"+it.key)+'"'+(done[it.key]?" checked":"")+'><span class="txt">'+esc(it.name)+"</span></label>"
       +(n?'<span class="sched">'+esc(n)+"</span>":"")+"</li>";
   };
-  $(elId).innerHTML = tree.length ? tree.map(h=>{
-    if(!h.kids.length) return leaf(h);
+  const group=h=>{
     const kids=leavesOf([h]), open=kids.filter(due);
     const n=open.filter(k=>done[k.key]).length, all=open.length>0&&n===open.length;
     return '<li class="row group'+(all?" done":"")+(open.length?"":" off")+'">'
@@ -729,7 +784,24 @@ function renderList(elId,tree,done,ns,emptyHtml,isDue,noteFor){
       +'<label><input type="checkbox" data-parent="'+esc(ns+":"+h.name)+'"'+(all?" checked":"")+'><span class="txt">'+esc(h.name)+"</span></label>"
       +'<span class="count">'+(open.length?n+" / "+open.length:"—")+"</span></div>"
       +'<ul class="kids">'+kids.map(leaf).join("")+"</ul></li>";
-  }).join("") : emptyHtml;
+  };
+  let fold=false;
+  const out=[];
+  tree.forEach((h,i)=>{
+    if(h.header){
+      // what sits under this heading, so a folded section still says what it holds
+      const under=[];
+      for(let j=i+1;j<tree.length&&!tree[j].header;j++) under.push(...leavesOf([tree[j]]));
+      const live=under.filter(due), n=live.filter(k=>done[k.key]).length;
+      fold=folded(h);
+      out.push('<li class="sect'+(fold?" folded":"")+'"><span class="sname">'+esc(h.name)+'</span>'
+        +(fold?'<button class="link" data-sect="'+esc(h.name)+'">from '+hhmm(h.opens)+' · show '+live.length+'</button>'
+              :'<span class="count">'+(live.length?n+" / "+live.length:"")+"</span>")+"</li>");
+      return;
+    }
+    if(!fold) out.push(h.kids.length?group(h):leaf(h));
+  });
+  $(elId).innerHTML=out.length?out.join(""):emptyHtml;
 }
 /* why a habit is sitting out today */
 function schedNote(it,s){
@@ -795,8 +867,11 @@ function renderHabits(){
     : L.length ? L.filter(l=>done[l.key]).length+" / "+L.length : "";
   $("skip").textContent = skipped(s) ? "Skipped — count this day again" : "Skip this day";
   $("skip").hidden = !leaves().length;
+  // a section with an hour stays folded until then — today only; a past day is over
+  const now=new Date(), mins=now.getHours()*60+now.getMinutes(), isToday=s===iso(now);
   renderList("habits",habitTree(),done,"h",'<li class="empty">No habits yet — add them under <b>Setup</b>.</li>',
-    it=>isDueOn(it,s), it=>schedNote(it,s));
+    it=>isDueOn(it,s), it=>schedNote(it,s),
+    h=>isToday&&h.opens!==null&&mins<h.opens&&!state.openSects[h.name]);
 }
 
 function renderWorkout(){
@@ -869,7 +944,7 @@ document.addEventListener("change",e=>{
   else if(t.dataset.parent!==undefined){
     const [ns,name]=nsplit(t.dataset.parent), f=ns==="h"?"habits":"workout";
     const tree=ns==="h"?habitTree():planTree(s), next=Object.assign({},d[f]);
-    const group=tree.find(x=>x.name===name);
+    const group=tree.find(x=>!x.header&&x.name===name);
     leavesOf(group?[group]:[])
       .filter(k=>ns!=="h"||isDueOn(k,s))
       .forEach(k=>next[k.key]=t.checked);
@@ -880,7 +955,8 @@ document.addEventListener("change",e=>{
   else if(t.dataset.status!==undefined) saveProjects((state.projects.items||[]).map(p=>p.id===t.dataset.status?Object.assign({},p,{status:t.value}):p));
 });
 document.addEventListener("click",e=>{
-  const b=e.target.closest("[data-deltask],[data-delproj],[data-day]"); if(!b) return;
+  const b=e.target.closest("[data-deltask],[data-delproj],[data-day],[data-sect]"); if(!b) return;
+  if(b.dataset.sect!==undefined){ state.openSects[b.dataset.sect]=true; return renderHabits() }
   const s=state.date, d=day(s);
   if(b.dataset.deltask!==undefined){
     const [src,i]=taskRef(b.dataset.deltask);
@@ -1044,9 +1120,73 @@ async function sync(){
     if(!offline) note("Sync: "+e.message);
   }finally{ syncing=false }
 }
-document.addEventListener("visibilitychange",()=>{ if(!document.hidden) sync() });
+/* An installed app resumes from memory rather than reloading, so anything that
+   depends on the clock has to be re-checked: a section opening at its hour, and
+   the day itself rolling over while the app sat in the background. */
+let loadedToday=iso(new Date());
+function onClock(){
+  const t=iso(new Date());
+  if(t!==loadedToday){
+    if(state.date===loadedToday){ state.date=t; state.calMonth=new Date() }
+    loadedToday=t;
+  }
+  render();
+}
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden){ onClock(); sync() } });
+setInterval(()=>{ if(!document.hidden) onClock() },5*60*1000);
 addEventListener("online",sync);
 $("syncbtn").onclick=()=>{ const c=syncCfg(); (c.repo&&c.token)?sync():$("settings").click() };
+
+/* ---------- reminder ----------
+   The app has no server to push a notification from, and a web page on a phone
+   can't schedule an alarm by itself. The phone's calendar can: this writes a
+   daily event with an alert that the calendar delivers. Floating local time, so
+   21:00 stays 21:00 wherever the phone is. */
+const icsEscape=t=>String(t).replace(/\\/g,"\\\\").replace(/;/g,"\;").replace(/,/g,"\\,").replace(/\r?\n/g,"\\n");
+function icsFold(line){                        // RFC 5545: 75 octets a line, continuations start with a space
+  const enc=new TextEncoder(), out=[];
+  let cur="", n=0;
+  for(const ch of line){
+    const b=enc.encode(ch).length, room=out.length?74:75;
+    if(n+b>room){ out.push(cur); cur=""; n=0 }
+    cur+=ch; n+=b;
+  }
+  out.push(cur);
+  return out.join("\r\n ");
+}
+function buildIcs(time,now,url){
+  const [H,M]=time.split(":").map(Number);
+  const start=new Date(now.getFullYear(),now.getMonth(),now.getDate(),H,M);
+  if(start<=now) start.setDate(start.getDate()+1);
+  const p=n=>String(n).padStart(2,"0");
+  const local=d=>d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+"T"+p(d.getHours())+p(d.getMinutes())+"00";
+  const stamp=now.toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,"");
+  const evening=H>=12, title="Day Desk — "+(evening?"evening check-in":"morning");
+  let host="daydesk"; try{ host=new URL(url).host||host }catch(e){}
+  return [
+    "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Day Desk//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    "UID:daydesk-reminder-"+p(H)+p(M)+"@"+host,          // the same time again replaces, not duplicates
+    "DTSTAMP:"+stamp,
+    "DTSTART:"+local(start),
+    "DURATION:PT5M",
+    "RRULE:FREQ=DAILY",
+    "SUMMARY:"+icsEscape(title),
+    "DESCRIPTION:"+icsEscape((evening?"Tick what only the end of the day can tell.":"Start the day's list.")+"\n"+url),
+    "URL:"+url,
+    "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+icsEscape(title),"TRIGGER:PT0M","END:VALARM",
+    "END:VEVENT","END:VCALENDAR",
+  ].map(icsFold).join("\r\n")+"\r\n";
+}
+$("fics").onclick=()=>{
+  const t=$("ftime").value||"21:00";
+  const url=location.origin+location.pathname.replace(/[^/]*$/,"");
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([buildIcs(t,new Date(),url)],{type:"text/calendar"}));
+  a.download="day-desk-"+t.replace(":","")+".ics";
+  a.click(); URL.revokeObjectURL(a.href);
+  $("fics-note").textContent="Open the file to add it — "+t+" every day.";
+};
 
 /* ---------- backup ---------- */
 /* Everything lives in this browser. Ask it to keep the data even under storage

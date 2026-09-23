@@ -49,3 +49,23 @@ assert.ok(!addRequestedHabits("Supplements\n  Vitamin D").includes("Vitamin D @3
   "only a top-level vitamins line gets the course");
 
 console.log("migrate: 12 checks passed");
+
+/* --- the second migration: morning and evening sections --- */
+const sectSrc = script.match(/function addSections\(text\)\{[\s\S]*?\n\}/);
+if (!sectSrc) throw new Error("couldn't find addSections in index.html");
+const addSections = new Function(sectSrc[0] + "\nreturn addSections;")();
+
+const split = addSections(out).split("\n");         // `out` is the list after the first migration
+assert.equal(split[0], "# Morning", "morning heading first");
+const eveAt = split.indexOf("# Evening @18");
+assert.ok(eveAt > 0, "evening heading, opening at 18:00");
+const morningPart = split.slice(1, eveAt), eveningPart = split.slice(eveAt + 1);
+assert.ok(morningPart.includes("Read affirmations") && morningPart.includes("Take vitamins @30/30"), "morning keeps the morning things");
+assert.ok(eveningPart.includes("Пополнить список достижений"), "achievements are an end-of-day thing");
+assert.deepEqual(eveningPart.slice(-4), ["Аскеза @30d", "  Без кальяна", "  Без порно", "  Без лишних трат"],
+  "the abstinence block moves whole, children with it");
+assert.equal(split.filter(l => !l.startsWith("#")).length, out.split("\n").length, "nothing lost, nothing added but the two headings");
+assert.equal(addSections(addSections(out)), addSections(out), "a second pass changes nothing");
+assert.equal(addSections("# Mine\nRead"), "# Mine\nRead", "a list with its own sections is left alone");
+assert.equal(addSections("Read\nWalk"), "Read\nWalk", "nothing evening-like: nothing to split");
+console.log("sections: 9 checks passed");

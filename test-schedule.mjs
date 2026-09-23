@@ -18,6 +18,7 @@ const source = [
   grab(/const shift=[^\n]+/, "shift"),
   grab(/const DOWKEY=\{[^}]+\};/, "DOWKEY"),
   grab(/function parseSched\(name\)\{[\s\S]*?\n\}/, "parseSched"),
+  grab(/function parseHeader\(text\)\{[\s\S]*?\n\}/, "parseHeader"),
   grab(/function parseTree\(raw,scheduled\)\{[\s\S]*?\n\}/, "parseTree"),
   grab(/const leavesOf=tree=>[\s\S]*?\n  : \[h\]\);/, "leavesOf"),
   grab(/function weekDays\(s\)\{[\s\S]*?\n\}/, "weekDays"),
@@ -26,8 +27,8 @@ const source = [
   grab(/function dueOn\(it,s,habitsFor,firstTick\)\{[\s\S]*?\n\}/, "dueOn"),
 ].join("\n");
 
-const { parseSched, parseTree, leavesOf, dueOn, weekDays, cyclePhase, runLength } =
-  new Function(source + "\nreturn {parseSched,parseTree,leavesOf,dueOn,weekDays,cyclePhase,runLength};")();
+const { parseSched, parseHeader, parseTree, leavesOf, dueOn, weekDays, cyclePhase, runLength } =
+  new Function(source + "\nreturn {parseSched,parseHeader,parseTree,leavesOf,dueOn,weekDays,cyclePhase,runLength};")();
 
 // 2026-09-14 is a Monday
 const MON = "2026-09-14", TUE = "2026-09-15", WED = "2026-09-16", SUN = "2026-09-20";
@@ -153,3 +154,19 @@ const runNote = n => (n >= 30 ? "held " + n + " days" : "day " + n + " of 30");
 assert.equal(runNote(runLength("k", TODAY, held(0, 1, 2), noSkip)), "day 3 of 30");
 assert.equal(runNote(30), "held 30 days");
 console.log("run: 12 checks passed");
+
+/* --- section headings: part of the list's shape, never part of a habit's key --- */
+const parseTreeH = parseTree, leavesOfH = leavesOf;
+
+assert.deepEqual(parseHeader("# Evening @18"), { header: true, name: "Evening", opens: 1080, key: "#Evening", kids: [] });
+assert.equal(parseHeader("# Evening @18:30").opens, 1110, "minutes are honoured");
+assert.equal(parseHeader("# Morning").opens, null, "a heading without an hour never folds");
+assert.equal(parseHeader("#"), null, "a bare # is not a heading");
+
+const withSections = "# Morning\nRead\n# Evening @18\nАскеза @30d\n  Без кальяна";
+const flat = "Read\nАскеза @30d\n  Без кальяна";
+assert.deepEqual(leavesOfH(parseTreeH(withSections, true)).map(l => l.key), leavesOfH(parseTreeH(flat, true)).map(l => l.key),
+  "adding sections changes no habit key, so no history is orphaned");
+assert.equal(parseTreeH("# Evening\n  stray", true)[1].key, "stray", "an indented line under a heading is a habit, not the heading's child");
+assert.equal(parseTreeH("# Not a heading", false)[0].name, "# Not a heading", "workout lines are never headings");
+console.log("sections: 7 checks passed");

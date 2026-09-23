@@ -21,18 +21,27 @@ One per line in Setup; indent two spaces for a sub-item, and the parent ticks it
 once its sub-items are done.
 
 ```
+# Morning                   a heading
 Read affirmations           every day
 Sauna @mon,thu              only those weekdays
 Long run @2x                twice a week, any days
 Take vitamins @30/30        a course: 30 days on, 30 days off, repeating
   Vitamin D
   Omega-3
+# Evening @18               a heading that keeps its habits folded until 18:00
 Abstinence @30d             a run: 30 days held without a break
   No hookah                 each sub-item keeps its own run
 Gym @mon,wed                a schedule on a parent is inherited by its sub-items
   Squats
   Bench @tue                unless the sub-item sets its own
 ```
+
+A line starting with `#` is a **section heading**. Give it an hour (`# Evening @18`)
+and, on today, the habits under it stay folded into one line until then — whether
+an abstinence run held or what got achieved can only be known at the end of the
+day, so they shouldn't be tickable at breakfast. Tap the line to open it early; a
+past day is always open. Headings are never part of a habit's name, so adding or
+moving them doesn't disturb any history.
 
 A habit that isn't wanted today still shows, greyed and out of the count, with the
 reason beside it (`mon thu`, `1 left this week`, `break · 27 days left`). Weeks run
@@ -103,6 +112,14 @@ weeks; it stays quiet if sync is set up. The date of the last export belongs to 
 device and is never synced — otherwise one backed-up phone would silence the reminder
 on another that isn't.
 
+### Reminders
+
+There is no server to send notifications from, and a web page on a phone can't set
+an alarm by itself. Setup → **Reminder** writes a daily event, with an alert, into
+the phone's own calendar, which does the reminding. It uses local time, so 21:00
+stays 21:00 wherever you are; adding the same time again replaces the old event
+instead of adding a second. `node test-ics.mjs` checks the file format.
+
 ### Optional: syncing across devices
 
 If you'd rather not move a file by hand, Setup → *Sync via GitHub* points the app at
@@ -160,7 +177,8 @@ sw.js                   offline cache for the app shell + fonts
 icon-*.png              generated app icons
 test-merge.mjs          self-check for the sync merge
 test-schedule.mjs       self-check for habit schedules
-test-migrate.mjs        self-check for the one-time habit migration
+test-migrate.mjs        self-check for the one-time habit migrations
+test-ics.mjs            self-check for the calendar reminder file
 reset.html              clears a stuck offline copy on a device
 data/                   only if you turn sync on, and never in this repo
 ```
