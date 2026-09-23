@@ -1,5 +1,5 @@
 /* Bump CACHE when the app shell changes — that is what ships an update. */
-const CACHE = "daydesk-v11";
+const CACHE = "daydesk-v12";
 const SHELL = [
   "./",
   "./index.html",
@@ -31,12 +31,21 @@ self.addEventListener("fetch", e => {
 
   /* The page itself goes to the network first. Serving it from cache means a
      device that is online still shows yesterday's app until it happens to
-     reload twice — the cache is the offline fallback here, not the source. */
+     reload twice — the cache is the offline fallback here, not the source.
+
+     Only the app's own page may refresh that fallback, and only with a good
+     response. Storing every navigation under the app's name meant that
+     opening reset.html once replaced the offline copy of the app with the
+     reset page — so in airplane mode the reset page was all there was. */
   if (req.mode === "navigate") {
+    const path = new URL(req.url).pathname;
+    const isApp = path.endsWith("/") || path.endsWith("/index.html");
     e.respondWith(
       fetch(req).then(res => {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put("./index.html", copy));
+        if (isApp && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then(c => c.put("./index.html", copy));
+        }
         return res;
       }).catch(() => caches.match("./index.html", { ignoreSearch: true }))
     );
