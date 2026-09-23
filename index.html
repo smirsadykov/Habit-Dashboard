@@ -64,12 +64,8 @@ header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px so
 .ghost{background:none;border:1px solid transparent;border-radius:var(--r);padding:5px 9px;cursor:pointer;color:var(--ink-2)}
 .ghost:hover{background:var(--surface-2);color:var(--ink)}
 #syncbtn{font-family:var(--f-mono);font-size:12px;letter-spacing:.02em}
-#syncbtn[data-state="off"]{color:var(--ink-3)}
 #syncbtn[data-state="ok"]{color:var(--accent-ink)}
 #syncbtn[data-state="err"]{color:var(--crit)}
-.streak{font-family:var(--f-mono);font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);
-  background:var(--accent-soft);border-radius:100px;padding:5px 12px}
-.streak b{color:var(--accent-ink);font-weight:600}
 
 /* ---- the day at a glance ---- */
 .band{display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding:14px 0 2px}
@@ -88,16 +84,6 @@ header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px so
 .run.zero .pcount b{color:var(--crit)}
 .run.held .pcount b{color:var(--accent)}
 .nudge{width:100%;text-align:left;color:var(--warn)}
-
-/* ---- 30-day focus: one habit, one strip of days ---- */
-.focus{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 4px;border-bottom:1px solid var(--line)}
-.focus .ftxt{font-family:var(--f-display);font-weight:600;letter-spacing:-.01em}
-.focus .segs{flex-wrap:wrap}
-.focus .segs i.won{background:var(--accent)}
-.focus .segs i.lost{background:var(--crit);opacity:.45}
-.focus .segs i.skip{background:var(--ink-3);opacity:.4}
-.focus .segs i.open{box-shadow:inset 0 0 0 1.5px var(--now)}
-.focus .pcount{margin-left:auto}
 
 /* ---- layout ---- */
 main{display:grid;gap:18px;grid-template-columns:1fr;padding-top:16px;align-items:start}
@@ -207,8 +193,7 @@ select.status{width:90px;flex:none}
   /* the first screen is for ticking: keep the affirmation and the summary tight */
   #creed{font-size:14px;line-height:1.35;padding:9px 4px}   /* id: the base .creed rule sits later in the sheet */
   .band{gap:6px 12px;padding:10px 0 0}
-  .streak{font-size:11px;padding:3px 9px}
-  .streak .sfx,.run .of{display:none}      /* "streak 8", "Без кальяна 5" — the rest is on the rows */
+  .run .of{display:none}                   /* "Без кальяна 5" — the "of 30" is on the row */
   .runs{gap:4px 14px}
   .pips{gap:4px 12px}
   .pips .segs{display:none}               /* the count says it; the bars don't fit one row */
@@ -273,7 +258,7 @@ header{padding-top:env(safe-area-inset-top)}
     </nav>
     <span class="tools">
       <button class="ghost" id="today" title="Jump to today">Today</button>
-      <button class="ghost" id="syncbtn" data-state="off" title="Sync with GitHub">Sync off</button>
+      <button class="ghost" id="syncbtn" data-state="off" title="Sync with GitHub" hidden>Sync</button>
       <button class="ghost" id="settings" title="Edit habits, plan and targets">Setup</button>
     </span>
   </div>
@@ -281,9 +266,7 @@ header{padding-top:env(safe-area-inset-top)}
 
 <div class="wrap">
   <div class="creed" id="creed" hidden></div>
-  <div class="focus" id="focus" hidden></div>
   <div class="band">
-    <div class="streak" id="streak"></div>
     <div class="pips" id="pips"></div>
     <div class="runs" id="runs" hidden></div>
     <button class="link nudge" id="nudge" hidden></button>
@@ -353,21 +336,11 @@ header{padding-top:env(safe-area-inset-top)}
         thirty days held without a break, which starts over if you miss one. Without a schedule, a habit is simply daily.
         Rewording a habit keeps its history as long as you don't add or remove lines in the same edit.</p>
       <textarea id="fhabits" rows="12"></textarea>
-      <div class="field" style="margin-top:10px"><label for="fallow">Habits that may be missed and still keep the streak</label>
-        <input type="number" id="fallow" min="0" max="20" step="1"></div>
     </div>
     <div>
       <h3>Standing affirmation</h3>
       <p class="hint">Shown at the top of every day. This is what the &ldquo;Read affirmations&rdquo; habit reads.</p>
       <textarea id="fcreed" rows="3"></textarea>
-    </div>
-    <div>
-      <h3>30-day focus</h3>
-      <p class="hint">One habit, thirty days, nothing else added until it's done. Shown under the affirmation with a strip of the days so far.</p>
-      <div class="wk">
-        <div class="field"><label for="ffocus">Habit</label><select id="ffocus" class="plain"></select></div>
-        <div class="field"><label for="fstart">Started on</label><input type="date" id="fstart"></div>
-      </div>
     </div>
     <div>
       <h3>Weekly training plan</h3>
@@ -430,7 +403,6 @@ const state={
   habits:{text:""},
   workout:{days:{}},
   creed:{text:""},
-  focus:{habit:"",start:""},
   projects:{items:[]},
   openSects:{}
 };
@@ -466,7 +438,6 @@ function loadLocal(){
   state.habits=lsGet("config/habits")||state.habits;
   state.workout=lsGet("config/workout")||state.workout;
   state.creed=lsGet("config/creed")||state.creed;
-  state.focus=lsGet("config/focus")||state.focus;
   state.projects=lsGet("config/projects")||state.projects;
 }
 function note(msg){ $("offline").innerHTML='<div class="warnbar">'+esc(msg)+"</div>"; }
@@ -533,7 +504,6 @@ async function connect(){
   db.doc("config/habits").onSnapshot(s=>{if(s.exists){state.habits=s.data();applyMigrations()}render()},err);
   db.doc("config/workout").onSnapshot(s=>{if(s.exists)state.workout=s.data();render()},err);
   db.doc("config/creed").onSnapshot(s=>{if(s.exists)state.creed=s.data();render()},err);
-  db.doc("config/focus").onSnapshot(s=>{if(s.exists)state.focus=s.data();render()},err);
   db.doc("config/projects").onSnapshot(s=>{if(s.exists)state.projects=s.data();render()},err);
   db.collection("days").orderBy("date","desc").limit(400).onSnapshot(q=>{
     state.days={};
@@ -671,41 +641,6 @@ function ratio(s){
   const done=day(s).habits||{};
   return L.filter(l=>done[l.key]).length/L.length;
 }
-/* A day keeps the streak when at least one habit due that day was ticked and no
-   more than `allow` were missed. The "at least one" matters: with a short habit
-   list an allowance can exceed the number due, and without this every blank day
-   in history would count as kept. */
-const allowMiss=()=>Math.max(0,+(state.habits.allow??1));
-const isKept=(due,done,allow)=>due>0&&done>0&&due-done<=allow;
-function kept(s){
-  const L=dueLeaves(s), ticks=day(s).habits||{};
-  return isKept(L.length,L.filter(l=>ticks[l.key]).length,allowMiss());
-}
-/* A skipped day is neither kept nor broken — the chain passes straight through
-   it, so being ill or away costs nothing but doesn't earn a day either. */
-function streak(){
-  if(!leaves().length) return 0;
-  let n=0,cur=iso(new Date()),guard=0;
-  if(!skipped(cur)&&!kept(cur)) cur=shift(cur,-1);
-  while(guard++<3650){
-    if(skipped(cur)){ cur=shift(cur,-1); continue }
-    if(!kept(cur)) break;
-    n++; cur=shift(cur,-1);
-  }
-  return n;
-}
-
-/* One habit, thirty days. The strip runs from the start date to today: a day
-   is won when the habit was ticked, lost when it was due and wasn't, and sits
-   out when the day was skipped or the habit wasn't due. Today stays open until
-   it is ticked. */
-const FOCUS_DAYS=30;
-function focusStats(f,today,ticked,isSkipped,isDue){
-  const days=[];
-  for(let k=f.start;days.length<FOCUS_DAYS&&k<=today;k=shift(k,1))
-    days.push(ticked(k)?"won":isSkipped(k)||!isDue(k)?"skip":k===today?"open":"lost");
-  return {days,won:days.filter(x=>x==="won").length,n:days.length,over:days.length>=FOCUS_DAYS};
-}
 
 /* A task belongs to the day it was written on, and stays on the list every day
    after that until it is ticked — so nothing is stranded on a day you skipped
@@ -732,14 +667,10 @@ function render(){
 
   $("dlabel").textContent = s===today ? "Today · "+parseDate(s).toLocaleDateString(undefined,{month:"short",day:"numeric"})
     : parseDate(s).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric",year:s.slice(0,4)!==today.slice(0,4)?"numeric":undefined});
-  const st=streak(), am=allowMiss();
-  $("streak").innerHTML="Streak <b>"+st+"</b><span class=\"sfx\"> day"+(st===1?"":"s")+"</span>";
-  $("streak").title=am?"A day keeps the streak with up to "+am+" habit"+(am===1?"":"s")+" missed.":"A day keeps the streak only when every habit is done.";
 
   const creed=(state.creed.text||"").trim();
   $("creed").hidden=!creed; $("creed").textContent=creed;
 
-  renderFocus();
   renderPips();
   renderRuns(s);
   renderBackup();
@@ -821,16 +752,6 @@ function schedNote(it,s){
   }
   const done=weekDays(s).filter(k=>habitsFor(k)[it.key]).length;
   return done>=sc.n?"done this week":(sc.n-done)+" left this week";
-}
-
-function renderFocus(){
-  const f=state.focus||{}, leaf=leaves().find(l=>l.key===f.habit), el=$("focus");
-  el.hidden=!(leaf&&f.start); if(el.hidden) return;
-  const st=focusStats(f,iso(new Date()),k=>!!habitsFor(k)[f.habit],skipped,k=>isDueOn(leaf,k));
-  const label=!st.n?"starts "+f.start:st.over?st.won+" / 30 won — pick the next one":"day "+st.n+" / 30 · "+st.won+" won";
-  el.innerHTML='<span class="plabel">Focus</span><span class="ftxt">'+esc(leaf.name)+'</span>'
-    +'<span class="segs">'+st.days.map(x=>'<i class="'+x+'"></i>').join("")+"<i></i>".repeat(FOCUS_DAYS-st.n)+'</span>'
-    +'<span class="pcount">'+esc(label)+'</span>';
 }
 
 /* every run on the list, with how many days it has been held as of the day shown */
@@ -985,11 +906,7 @@ $("skip").onclick=()=>saveDay(state.date,{skip:!skipped(state.date)});
 $("fweek").innerHTML=DOWFULL.map((n,i)=>'<div class="field"><label for="fd'+i+'">'+n+'</label><textarea id="fd'+i+'" rows="5"></textarea></div>').join("");
 $("settings").onclick=()=>{
   $("fhabits").value=state.habits.text!==undefined?state.habits.text:(state.habits.items||[]).join("\n");
-  $("fallow").value=allowMiss();
   $("fcreed").value=state.creed.text||"";
-  const f=state.focus||{};
-  $("ffocus").innerHTML='<option value="">None</option>'+leaves().map(l=>'<option value="'+esc(l.key)+'"'+(l.key===f.habit?" selected":"")+'>'+esc(l.key)+"</option>").join("");
-  $("fstart").value=f.start||"";
   const sc=syncCfg();
   $("srepo").value=sc.repo||""; $("sbranch").value=sc.branch||""; $("stoken").value=sc.token||"";
   DOWFULL.forEach((_,i)=>$("fd"+i).value=state.workout.days?.[i]||"");
@@ -1017,14 +934,13 @@ $("setupform").onsubmit=e=>{
   const before=leaves().map(l=>l.key);
   // keep whatever else the record carries (the migration flag, anything added later);
   // rebuilding it from the two visible fields silently threw those away
-  state.habits=Object.assign({},state.habits,{text:$("fhabits").value,allow:Math.max(0,+$("fallow").value||0)});
+  state.habits=Object.assign({},state.habits,{text:$("fhabits").value});
   delete state.habits.items;
   renameHistory(before,leaves().map(l=>l.key));
   state.creed={text:$("fcreed").value.trim()};
-  state.focus={habit:$("ffocus").value,start:$("fstart").value};
   const days={}; DOWFULL.forEach((_,i)=>days[i]=$("fd"+i).value.trim());
   state.workout={days};
-  put("config/habits",state.habits); put("config/creed",state.creed); put("config/focus",state.focus); put("config/workout",state.workout);
+  put("config/habits",state.habits); put("config/creed",state.creed); put("config/workout",state.workout);
   lsSet("sync",{repo:$("srepo").value.trim().replace(/^https?:\/\/github\.com\//,"").replace(/\.git$/,""),
                 branch:$("sbranch").value.trim()||"main",
                 token:$("stoken").value.trim(), last:syncCfg().last});
@@ -1041,8 +957,11 @@ const REMOTE="data/daydesk.json";
 const syncCfg=()=>lsGet("sync")||{};
 let syncTimer=null, syncing=false;
 
+/* The header only carries sync once it's set up; "off" forever is just noise in
+   the most valuable strip of the screen. It lives in Setup until then. */
 function setSync(st,label,title){
   const b=$("syncbtn");
+  b.hidden=st==="off";
   b.dataset.state=st; b.textContent=label; b.title=title||"Sync with GitHub";
 }
 function b64(str){
@@ -1135,7 +1054,7 @@ function onClock(){
 document.addEventListener("visibilitychange",()=>{ if(!document.hidden){ onClock(); sync() } });
 setInterval(()=>{ if(!document.hidden) onClock() },5*60*1000);
 addEventListener("online",sync);
-$("syncbtn").onclick=()=>{ const c=syncCfg(); (c.repo&&c.token)?sync():$("settings").click() };
+$("syncbtn").onclick=()=>sync();
 
 /* ---------- reminder ----------
    The app has no server to push a notification from, and a web page on a phone
@@ -1225,7 +1144,7 @@ function renderBackup(){
 }
 function snapshot(){
   return {v:1, exported:new Date().toISOString(),
-    config:{habits:state.habits,workout:state.workout,creed:state.creed,focus:state.focus,projects:state.projects},
+    config:{habits:state.habits,workout:state.workout,creed:state.creed,projects:state.projects},
     days:state.days};
 }
 $("nudge").onclick=()=>{ $("settings").click(); $("fexport").scrollIntoView({block:"center"}) };
@@ -1247,9 +1166,8 @@ $("ffile").onchange=async e=>{
     const c=d.config;
     state.habits=c.habits||state.habits; state.workout=c.workout||state.workout;
     state.creed=c.creed||state.creed; state.projects=c.projects||state.projects;
-    state.focus=c.focus||state.focus;
     put("config/habits",state.habits); put("config/workout",state.workout);
-    put("config/creed",state.creed); put("config/focus",state.focus); put("config/projects",state.projects);
+    put("config/creed",state.creed); put("config/projects",state.projects);
     Object.keys(d.days).forEach(k=>{ state.days[k]=d.days[k]; put("days/"+k,d.days[k]) });
     render();
     $("fio").textContent="Imported "+Object.keys(d.days).length+" days.";

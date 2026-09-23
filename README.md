@@ -8,8 +8,7 @@ Static files, no build step, no dependencies. Installable as a PWA and works off
 | Block | What it does |
 |---|---|
 | Affirmation | A standing line across the top of every day |
-| Focus | One habit for thirty days: a strip of the days so far, won or lost |
-| Habits | Nested checkboxes, per-habit schedules, skippable days, a streak that tolerates N misses |
+| Habits | Nested checkboxes, morning and evening sections, per-habit schedules, skippable days |
 | Tasks | Written on a day, carried until ticked; every task belongs to a project |
 | Workout | Today's items from a weekly plan |
 | Projects | Status (Active / On hold / Done), open count, last touched |
@@ -59,13 +58,8 @@ so it starts when you actually start. Sub-items share their parent's course — 
 vitamins first ticked on three different days still run as one course, off the
 earliest of them. To move the start, tick the habit on the day you want it to begin.
 
-**Focus** picks one habit and a start date in Setup. It sits under the affirmation
-with a strip of the thirty days: green when ticked, red when it was due and missed,
-grey when the day was skipped or the habit wasn't due. When the strip fills, pick
-the next one. `node test-focus.mjs` checks the counting.
-
-**Skip this day** marks a day neutral — ill, travelling. The streak passes straight
-through it: it costs nothing and earns nothing.
+**Skip this day** marks a day neutral — ill, travelling. An abstinence run passes
+straight through it: it costs nothing and earns nothing.
 
 **Rewording** a habit carries its history with it, as long as you don't add or
 remove lines in the same edit. Change the wording, save, then add new habits.
@@ -179,6 +173,7 @@ test-merge.mjs          self-check for the sync merge
 test-schedule.mjs       self-check for habit schedules
 test-migrate.mjs        self-check for the one-time habit migrations
 test-ics.mjs            self-check for the calendar reminder file
+test-offline.mjs        opens the app in headless Chrome with the network gone
 reset.html              clears a stuck offline copy on a device
 data/                   only if you turn sync on, and never in this repo
 ```

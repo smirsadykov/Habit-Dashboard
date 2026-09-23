@@ -80,17 +80,6 @@ assert.equal(parseTree("Ride @zone2", false)[0].name, "Ride @zone2");
 
 console.log("schedule: 20 checks passed");
 
-/* --- a day only counts toward the streak if something was actually done --- */
-const isKept = new Function(
-  (html.split("<script>")[1].split("</script>")[0]).match(/const isKept=[^\n]+/)[0] + "\nreturn isKept;"
-)();
-assert.equal(isKept(7, 6, 1), true, "one miss inside the allowance");
-assert.equal(isKept(7, 5, 1), false, "two misses is a break");
-assert.equal(isKept(1, 0, 1), false, "a blank day never counts, even when the allowance covers it");
-assert.equal(isKept(0, 0, 1), false, "no habits due is not a kept day");
-assert.equal(isKept(3, 3, 0), true, "a perfect day with no allowance");
-console.log("streak: 5 checks passed");
-
 /* --- a course: N days on, N days off, anchored to the first tick --- */
 const vits = leavesOf(parseTree("Take vitamins @30/30\n  Vitamin D\n  Omega-3", true));
 assert.deepEqual(vits[0].sched, { type: "cycle", on: 30, off: 30 }, "sub-items inherit the course");
