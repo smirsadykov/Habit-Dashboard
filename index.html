@@ -81,6 +81,13 @@ header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px so
 .segs i.on{background:var(--accent)}
 .pcount{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
 .pgroup.none .pcount{color:var(--ink-3)}
+/* abstinence runs: the hardest commitments, so the most visible numbers */
+.runs{display:flex;flex-wrap:wrap;gap:6px 18px;width:100%;align-items:baseline}
+.rlabel{font-size:13px;color:var(--ink-2)}
+.run .pcount b{font-family:var(--f-display);font-size:17px;font-weight:700;color:var(--accent-ink);margin-right:1px}
+.run.zero .pcount b{color:var(--crit)}
+.run.held .pcount b{color:var(--accent)}
+.nudge{width:100%;text-align:left;color:var(--warn)}
 
 /* ---- 30-day focus: one habit, one strip of days ---- */
 .focus{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 4px;border-bottom:1px solid var(--line)}
@@ -191,14 +198,19 @@ select.status{width:90px;flex:none}
   .wrap{padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}
   main{gap:14px;padding-top:12px}
   section{padding:14px 14px 12px;gap:10px}
-  .creed{font-size:16px;padding:14px 4px}
-  .band{gap:10px}
-  .pips{gap:14px;width:100%}
-  .segs i{width:11px}
+  /* the first screen is for ticking: keep the affirmation and the summary tight */
+  #creed{font-size:14px;line-height:1.35;padding:9px 4px}   /* id: the base .creed rule sits later in the sheet */
+  .band{gap:6px 12px;padding:10px 0 0}
+  .streak{font-size:11px;padding:3px 9px}
+  .streak .sfx,.run .of{display:none}      /* "streak 8", "Без кальяна 5" — the rest is on the rows */
+  .runs{gap:4px 14px}
+  .pips{gap:4px 12px}
+  .pips .segs{display:none}               /* the count says it; the bars don't fit one row */
+  .plabel{letter-spacing:.05em}
 
   /* a task keeps its text and delete on one line; the project tag sits under it,
      hugging its own text rather than stretching the width of the card */
-  li.row label{min-width:calc(100% - 46px)}   /* text + delete fill the line... */
+  #tasks li.row label{min-width:calc(100% - 46px)}   /* a task's text + delete fill the line... */
   li.row .x{order:2}
   li.row select.chip{order:3;flex:0 0 auto;max-width:100%;margin:3px 0 1px 27px;align-self:flex-start}
   /* only the task form needs a second row; a name-plus-Add form stays on one */
@@ -267,6 +279,8 @@ header{padding-top:env(safe-area-inset-top)}
   <div class="band">
     <div class="streak" id="streak"></div>
     <div class="pips" id="pips"></div>
+    <div class="runs" id="runs" hidden></div>
+    <button class="link nudge" id="nudge" hidden></button>
   </div>
   <div id="offline"></div>
   <main>
@@ -365,6 +379,7 @@ header{padding-top:env(safe-area-inset-top)}
     </div>
     <div>
       <h3>Backup</h3>
+      <p class="hint" id="fbackup"></p>
       <p class="hint">Everything you tick lives in this browser. Export it to move to another device or another browser, and import the file there.</p>
       <div class="dataio">
         <button type="button" class="btn quiet" id="fexport">Export JSON</button>
@@ -418,7 +433,7 @@ function allLocal(){
   Object.keys(localStorage).forEach(k=>{
     if(!k.startsWith(LS)) return;
     const path=k.slice(LS.length);
-    if(path==="sync"||path==="u") return;
+    if(path==="sync"||path==="u"||path==="backup") return;
     const v=lsGet(path); if(v) out[path]=v;
   });
   return out;
@@ -465,6 +480,7 @@ async function connect(){
   try{ db=window.claude ? await claude.use("db") : null; }catch(e){ db=null; }
   if(!db){
     loadLocal();
+    protectStorage();
     applyMigrations();
     render();
     return sync();
@@ -662,7 +678,7 @@ function render(){
   $("dlabel").textContent = s===today ? "Today · "+parseDate(s).toLocaleDateString(undefined,{month:"short",day:"numeric"})
     : parseDate(s).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric",year:s.slice(0,4)!==today.slice(0,4)?"numeric":undefined});
   const st=streak(), am=allowMiss();
-  $("streak").innerHTML="Streak <b>"+st+"</b> day"+(st===1?"":"s");
+  $("streak").innerHTML="Streak <b>"+st+"</b><span class=\"sfx\"> day"+(st===1?"":"s")+"</span>";
   $("streak").title=am?"A day keeps the streak with up to "+am+" habit"+(am===1?"":"s")+" missed.":"A day keeps the streak only when every habit is done.";
 
   const creed=(state.creed.text||"").trim();
@@ -670,6 +686,8 @@ function render(){
 
   renderFocus();
   renderPips();
+  renderRuns(s);
+  renderBackup();
   renderHabits();
 
   // tasks
@@ -743,6 +761,18 @@ function renderFocus(){
     +'<span class="pcount">'+esc(label)+'</span>';
 }
 
+/* every run on the list, with how many days it has been held as of the day shown */
+function renderRuns(s){
+  const runs=leaves().filter(l=>l.sched&&l.sched.type==="run");
+  $("runs").hidden=!runs.length;
+  $("runs").innerHTML=runs.map(l=>{
+    const n=runLength(l.key,s,k=>!!habitsFor(k)[l.key],skipped), t=l.sched.n;
+    return '<div class="pgroup run'+(n>=t?" held":n?"":" zero")+'" title="'+esc(l.key)+'">'
+      +'<span class="rlabel">'+esc(l.name)+'</span>'
+      +'<span class="pcount"><b>'+n+'</b><span class="of"> / '+t+'</span></span></div>';
+  }).join("");
+}
+
 function renderPips(){
   const s=state.date, d=day(s), tasks=tasksFor(s).map(x=>x.t);
   const hL=dueLeaves(s), hd=d.habits||{}, wL=leavesOf(planTree(s)), wd=d.workout||{};
@@ -755,7 +785,7 @@ function renderPips(){
     if(!g[2]) return '<div class="pgroup none"><span class="plabel">'+g[0]+'</span><span class="pcount">none</span></div>';
     let seg="";
     for(let i=0;i<Math.min(g[2],12);i++) seg+="<i"+(i<g[1]?' class="on"':"")+"></i>";
-    return '<div class="pgroup"><span class="plabel">'+g[0]+'</span><span class="segs">'+seg+'</span><span class="pcount">'+g[1]+" / "+g[2]+"</span></div>";
+    return '<div class="pgroup"><span class="plabel">'+g[0]+'</span><span class="segs">'+seg+'</span><span class="pcount">'+g[1]+"/"+g[2]+"</span></div>";
   }).join("");
 }
 
@@ -1019,16 +1049,53 @@ addEventListener("online",sync);
 $("syncbtn").onclick=()=>{ const c=syncCfg(); (c.repo&&c.token)?sync():$("settings").click() };
 
 /* ---------- backup ---------- */
+/* Everything lives in this browser. Ask it to keep the data even under storage
+   pressure, and keep track of when it was last exported, so losing the phone
+   is not the same as losing the history. */
+let persisted=null;
+function protectStorage(){
+  if(!(navigator.storage&&navigator.storage.persist)) return;
+  navigator.storage.persisted()
+    .then(p=>p||navigator.storage.persist())
+    .then(p=>{ persisted=p; render() })
+    .catch(()=>{});
+}
+function backupAge(){
+  const b=lsGet("backup");
+  return b&&b.at?Math.floor((Date.now()-b.at)/864e5):null;
+}
+/* Only nags when it matters: standalone, not syncing elsewhere, a few days of
+   real history, and no export in two weeks. */
+function backupNudge(){
+  if(db) return "";
+  const c=syncCfg(); if(c.repo&&c.token) return "";
+  if(Object.keys(state.days).length<3) return "";
+  const age=backupAge();
+  if(age!==null&&age<14) return "";
+  return age===null?"Only on this phone — back it up"
+                   :"Last backup "+age+" days ago — export";
+}
+function renderBackup(){
+  const msg=backupNudge(), n=$("nudge");
+  n.hidden=!msg; n.textContent=msg;
+  const age=backupAge();
+  $("fbackup").textContent=
+    (age===null?"Never exported from this device.":age===0?"Exported today.":"Last exported "+age+" day"+(age===1?"":"s")+" ago.")
+    +(persisted===true?" This browser has agreed to keep the data.":persisted===false?" This browser may clear the data if the phone runs short of space — keep a recent export.":"");
+}
 function snapshot(){
   return {v:1, exported:new Date().toISOString(),
     config:{habits:state.habits,workout:state.workout,creed:state.creed,focus:state.focus,projects:state.projects},
     days:state.days};
 }
+$("nudge").onclick=()=>{ $("settings").click(); $("fexport").scrollIntoView({block:"center"}) };
 $("fexport").onclick=()=>{
   const a=document.createElement("a");
   a.href=URL.createObjectURL(new Blob([JSON.stringify(snapshot(),null,2)],{type:"application/json"}));
   a.download="day-desk-"+iso(new Date())+".json";
   a.click(); URL.revokeObjectURL(a.href);
+  lsSet("backup",{at:Date.now()});
+  render();
   $("fio").textContent="Exported.";
 };
 $("fimport").onclick=()=>$("ffile").click();

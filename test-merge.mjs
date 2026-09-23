@@ -76,4 +76,8 @@ reset({ "config/habits": { text: "Read" }, sync: { repo: "me/daydesk", token: "s
 assert.ok(!("sync" in allLocal()), "sync settings must never be part of the synced payload");
 assert.ok(!JSON.stringify(allLocal()).includes("secret"), "token must never reach the repo");
 
-console.log("merge: 6 checks passed");
+// 7. "when did THIS device last export" is about this device only
+reset({ "config/habits": { text: "Read" }, backup: { at: 1 } }, { "config/habits": 100 });
+assert.ok(!("backup" in allLocal()), "a backup date synced to another device would tell it it was backed up");
+
+console.log("merge: 7 checks passed");

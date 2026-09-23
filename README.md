@@ -39,7 +39,8 @@ reason beside it (`mon thu`, `1 left this week`, `break · 27 days left`). Weeks
 Monday to Sunday.
 
 A **run** (`@30d`) is for abstinence: it asks every day and counts the days held
-without a break, shown as `day 12 of 30`. One slip and the count starts again;
+without a break, shown as `day 12 of 30` on the row and, in large type, in the
+summary at the top — the hardest commitments get the most visible numbers. One slip and the count starts again;
 a day marked **Skip this day** bridges the run instead of ending it. Sub-items
 inherit the length but each keeps its own count, so breaking one doesn't reset
 the others.
@@ -93,6 +94,14 @@ history. It works offline, with no account and no server.
 
 Setup → **Backup** exports everything as one JSON file and imports it back. That
 is how you move to a new phone, switch browsers, or keep a copy somewhere safe.
+
+The app asks the browser to keep its data even when the device is short of space.
+Whether it agrees is the browser's call (installed apps usually get it), and Setup
+says which way it went. Once there are a few days of history, a line under the
+summary reminds you when this device has never been exported or hasn't been for two
+weeks; it stays quiet if sync is set up. The date of the last export belongs to the
+device and is never synced — otherwise one backed-up phone would silence the reminder
+on another that isn't.
 
 ### Optional: syncing across devices
 
