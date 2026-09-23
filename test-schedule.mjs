@@ -23,7 +23,7 @@ const source = [
   grab(/const leavesOf=tree=>[\s\S]*?\n  : \[h\]\);/, "leavesOf"),
   grab(/function weekDays\(s\)\{[\s\S]*?\n\}/, "weekDays"),
   grab(/function cyclePhase\(sc,s,anchor\)\{[\s\S]*?\n\}/, "cyclePhase"),
-  grab(/function runLength\(key,s,ticked,isSkipped\)\{[\s\S]*?\n\}/, "runLength"),
+  grab(/function runLength\(key,s,ticked,isSkipped,slipped\)\{[\s\S]*?\n\}/, "runLength"),
   grab(/function dueOn\(it,s,habitsFor,firstTick\)\{[\s\S]*?\n\}/, "dueOn"),
 ].join("\n");
 
@@ -142,7 +142,17 @@ assert.equal(runLength("k", TODAY, held(2, 3), noSkip), 0,
 const runNote = n => (n >= 30 ? "held " + n + " days" : "day " + n + " of 30");
 assert.equal(runNote(runLength("k", TODAY, held(0, 1, 2), noSkip)), "day 3 of 30");
 assert.equal(runNote(30), "held 30 days");
-console.log("run: 12 checks passed");
+
+/* --- a slip: the owner saying "I broke it" ends the run on that day --- */
+const slippedOn = (...offsets) => { const set = new Set(offsets.map(back)); return k => set.has(k) };
+assert.equal(runLength("k", TODAY, held(1, 2, 3), noSkip, slippedOn(0)), 0,
+  "a slip today is zero now — not tomorrow, when an unticked day would have noticed");
+assert.equal(runLength("k", TODAY, held(0, 1, 2, 3), noSkip, slippedOn(0)), 0, "a slip outranks a tick on the same day");
+assert.equal(runLength("k", TODAY, held(0, 1, 3, 4, 5), noSkip, slippedOn(2)), 2, "a slip two days back: only the days after it count");
+assert.equal(runLength("k", TODAY, held(0, 1, 3), k => k === back(2), slippedOn(2)), 2,
+  "a skipped day bridges a run, but not if you slipped on it");
+assert.equal(runLength("k", TODAY, held(0, 1, 2), noSkip), 3, "no slip record at all: counts as before");
+console.log("run: 17 checks passed");
 
 /* --- section headings: part of the list's shape, never part of a habit's key --- */
 const parseTreeH = parseTree, leavesOfH = leavesOf;

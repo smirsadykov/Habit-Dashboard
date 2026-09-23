@@ -49,7 +49,11 @@ Monday to Sunday.
 A **run** (`@30d`) is for abstinence: it asks every day and counts the days held
 without a break, shown as `day 12 of 30` on the row and, in large type, in the
 summary at the top — the hardest commitments get the most visible numbers. One slip and the count starts again;
-a day marked **Skip this day** bridges the run instead of ending it. Sub-items
+a day marked **Skip this day** bridges the run instead of ending it. **Tap a count at
+the top to log a slip**: after a confirmation it drops to zero on the spot, the time
+is kept on the row, and that day can't be ticked as held. Tap it again to undo.
+It works on whichever day you're looking at, so a slip you forgot can go on the
+right day. Sub-items
 inherit the length but each keeps its own count, so breaking one doesn't reset
 the others.
 
