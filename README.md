@@ -131,8 +131,16 @@ so an online device gets the new version on its next open; the cache is only the
 offline fallback. Bumping `CACHE` is what refreshes the icons, manifest and fonts,
 and a device that picks up a new worker reloads itself once to apply it.
 
-A copy installed before this behaviour existed is still serving its old cache. Open
-the site in the browser (not the installed app), reload twice, and it will catch up.
+An installed app on a phone usually resumes from memory instead of loading the page,
+so on its own it would never ask whether anything changed. It asks every time it comes
+back to the foreground, and hourly while it stays open.
+
+**If a device is ever stuck on an old version**, open `reset.html` on it —
+<https://smirsadykov.github.io/Habit-Dashboard/reset.html>. It shows what the server
+has against what the device is holding, and one button clears the cached app files
+and reloads. Your ticks and history are in browser storage, not the cache, and are
+not touched. It works no matter which worker is in control, because that path was
+never cached.
 
 ## Layout
 
@@ -143,5 +151,7 @@ sw.js                   offline cache for the app shell + fonts
 icon-*.png              generated app icons
 test-merge.mjs          self-check for the sync merge
 test-schedule.mjs       self-check for habit schedules
+test-migrate.mjs        self-check for the one-time habit migration
+reset.html              clears a stuck offline copy on a device
 data/                   only if you turn sync on, and never in this repo
 ```

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Day Desk — update</title>
+<style>
+/* Deliberately self-contained: no fonts, no shared stylesheet, nothing that
+   could itself be served from the stale cache this page exists to clear. */
+:root{color-scheme:light dark;--bg:#f4f6f8;--fg:#141d27;--mut:#50606e;--line:#d6dde5;
+  --ok:#0ea96d;--bad:#dc3a34;--card:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#0f141a;--fg:#e9eff5;--mut:#a3b1be;--line:#2c3844;
+  --ok:#3fd693;--bad:#ff6f68;--card:#161e26}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+  padding:24px 18px 48px;max-width:640px;margin:0 auto}
+h1{font-size:20px;margin:0 0 4px}
+p.sub{color:var(--mut);margin:0 0 22px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.row{display:flex;gap:12px;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.k{color:var(--mut);font-size:13px;flex:none;min-width:116px}
+.v{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;overflow-wrap:anywhere}
+.ok{color:var(--ok)} .bad{color:var(--bad)}
+button{width:100%;padding:15px;font-size:17px;font-weight:600;border:0;border-radius:10px;
+  background:var(--ok);color:var(--bg);cursor:pointer}
+button[disabled]{opacity:.5}
+.note{color:var(--mut);font-size:14px;margin-top:14px}
+a{color:inherit}
+</style>
+</head>
+<body>
+<h1>Day Desk — force an update</h1>
+<p class="sub">Clears the offline copy this device is holding and reloads the app from the server. Your data is untouched — it lives in the browser's storage, not in the cache.</p>
+
+<div class="card" id="report">
+  <div class="row"><span class="k">Checking…</span></div>
+</div>
+
+<button id="go" disabled>Clear and reload</button>
+<p class="note">Nothing you have ticked is deleted: this only removes the cached <em>app files</em>, not your habits, tasks or history.</p>
+
+<script>
+const $ = id => document.getElementById(id);
+const rows = [];
+const add = (k, v, cls) => { rows.push({ k, v, cls }); paint() };
+const paint = () => {
+  $("report").innerHTML = rows.map(r =>
+    '<div class="row"><span class="k">' + r.k + '</span><span class="v' + (r.cls ? " " + r.cls : "") + '">' + r.v + "</span></div>"
+  ).join("");
+};
+
+(async () => {
+  rows.length = 0;
+  add("Origin", location.origin + location.pathname.replace(/reset\.html$/, ""));
+
+  // What the server has right now. no-store so this answer is never the cached one.
+  let live = "unknown";
+  try {
+    const txt = await fetch("sw.js?t=" + Date.now(), { cache: "no-store" }).then(r => r.text());
+    live = (txt.match(/CACHE\s*=\s*"([^"]+)"/) || [, "unknown"])[1];
+  } catch (e) { live = "offline (" + e.message + ")"; }
+  add("Server has", live);
+
+  // What this device is actually holding.
+  const names = "caches" in window ? await caches.keys() : [];
+  add("This device has", names.length ? names.join(", ") : "nothing cached",
+      names.length && !names.includes(live) ? "bad" : "ok");
+
+  const regs = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistrations() : [];
+  add("Workers", regs.length ? regs.length + " registered" : "none");
+
+  const stale = names.length && live !== "unknown" && !names.includes(live);
+  add("Verdict", stale ? "out of date — press the button" : "up to date", stale ? "bad" : "ok");
+
+  $("go").disabled = false;
+})();
+
+$("go").onclick = async () => {
+  $("go").disabled = true;
+  $("go").textContent = "Clearing…";
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    if ("caches" in window) {
+      const names = await caches.keys();
+      await Promise.all(names.map(n => caches.delete(n)));
+    }
+  } catch (e) { /* clear as much as we can, then reload regardless */ }
+  location.replace("./?fresh=" + Date.now());
+};
+</script>
+</body>
+</html>

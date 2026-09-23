@@ -436,16 +436,42 @@ function loadLocal(){
 }
 function note(msg){ $("offline").innerHTML='<div class="warnbar">'+esc(msg)+"</div>"; }
 
+/* Habits the owner asked for, added to their own list once. Their list lives on
+   their device, so shipping a new schedule type changes nothing they can see
+   until the lines exist — this writes them. Idempotent: a line already present
+   in any wording is left alone, and a flag stops it ever running twice, so a
+   habit they later delete stays deleted. */
+const MIGRATION="2026-09-23-courses-and-runs";
+function addRequestedHabits(text){
+  const lines=(text||"").replace(/\s+$/,"").split("\n");
+  const has=re=>re.test(text||"");
+  const vi=lines.findIndex(l=>/^\S/.test(l)&&/vitamin|витамин/i.test(l)&&!/\s@\S+\s*$/.test(l));
+  if(vi>=0) lines[vi]=lines[vi].replace(/\s+$/,"")+" @30/30";
+  if(!has(/achievement|достижени/i)) lines.push("Пополнить список достижений");
+  if(!has(/аскез|abstinence|кальян|hookah/i)) lines.push("Аскеза @30d","  Без кальяна","  Без порно","  Без лишних трат");
+  return lines.filter((l,i)=>i>0||l.trim()).join("\n");
+}
+function applyMigrations(){
+  const h=state.habits||{}, text=h.text!==undefined?h.text:(h.items||[]).join("\n");
+  if(!text.trim()||(h.migrated||[]).includes(MIGRATION)) return false;
+  const next=Object.assign({},h,{text:addRequestedHabits(text),migrated:(h.migrated||[]).concat(MIGRATION)});
+  delete next.items;
+  state.habits=next;
+  put("config/habits",next);
+  return true;
+}
+
 async function connect(){
   try{ db=window.claude ? await claude.use("db") : null; }catch(e){ db=null; }
   if(!db){
     loadLocal();
+    applyMigrations();
     render();
     return sync();
   }
   $("syncbtn").hidden=true;
   const err=e=>note("Sync interrupted ("+e.code+"). Reload to reconnect.");
-  db.doc("config/habits").onSnapshot(s=>{if(s.exists)state.habits=s.data();render()},err);
+  db.doc("config/habits").onSnapshot(s=>{if(s.exists){state.habits=s.data();applyMigrations()}render()},err);
   db.doc("config/workout").onSnapshot(s=>{if(s.exists)state.workout=s.data();render()},err);
   db.doc("config/creed").onSnapshot(s=>{if(s.exists)state.creed=s.data();render()},err);
   db.doc("config/focus").onSnapshot(s=>{if(s.exists)state.focus=s.data();render()},err);
@@ -883,7 +909,10 @@ function renameHistory(before,after){
 $("setupform").onsubmit=e=>{
   if(e.submitter && e.submitter.value!=="save") return;
   const before=leaves().map(l=>l.key);
-  state.habits={text:$("fhabits").value,allow:Math.max(0,+$("fallow").value||0)};
+  // keep whatever else the record carries (the migration flag, anything added later);
+  // rebuilding it from the two visible fields silently threw those away
+  state.habits=Object.assign({},state.habits,{text:$("fhabits").value,allow:Math.max(0,+$("fallow").value||0)});
+  delete state.habits.items;
   renameHistory(before,leaves().map(l=>l.key));
   state.creed={text:$("fcreed").value.trim()};
   state.focus={habit:$("ffocus").value,start:$("fstart").value};
@@ -975,7 +1004,7 @@ async function sync(){
       if(w.status===409||w.status===422) throw new Error("changed on another device — syncing again shortly");
       if(!w.ok) throw new Error("GitHub "+w.status);
     }
-    if(pulled){ loadLocal(); render() }
+    if(pulled){ loadLocal(); applyMigrations(); render() }
     lsSet("sync",Object.assign({},c,{last:Date.now()}));
     setSync("ok","Synced","Last synced "+new Date().toLocaleTimeString());
     $("offline").innerHTML="";
@@ -1033,7 +1062,16 @@ if("serviceWorker" in navigator && location.protocol.startsWith("http")){
     if(reloading||!hadController) return;
     reloading=true; location.reload();
   });
-  addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+  /* An installed app on a phone usually resumes from memory rather than loading
+     the page again, so it never asks whether sw.js changed and can sit on an
+     old version for days. Ask every time it comes back to the foreground, and
+     hourly while it stays open; a newer worker takes over and the page reloads
+     itself through the controllerchange handler above. */
+  addEventListener("load",()=>navigator.serviceWorker.register("sw.js").then(reg=>{
+    const check=()=>reg.update().catch(()=>{});
+    document.addEventListener("visibilitychange",()=>{ if(!document.hidden) check() });
+    setInterval(check,60*60*1000);
+  }).catch(()=>{}));
 }
 </script>
 </body>
