@@ -327,7 +327,8 @@ header{padding-top:env(safe-area-inset-top)}
       <h3>Daily habits</h3>
       <p class="hint">One per line. Indent two spaces to make it a sub-item — the parent ticks itself once every sub-item is done.
         End a line with <code>@mon,wed,fri</code> for fixed days, <code>@3x</code> for three times a week, or <code>@30/30</code>
-        for a course — thirty days on, thirty days off, counted from the first day you ticked it. Without one, a habit is daily.
+        for a course — thirty days on, thirty days off, counted from the first day you ticked it — or <code>@30d</code> for a run of
+        thirty days held without a break, which starts over if you miss one. Without a schedule, a habit is simply daily.
         Rewording a habit keeps its history as long as you don't add or remove lines in the same edit.</p>
       <textarea id="fhabits" rows="12"></textarea>
       <div class="field" style="margin-top:10px"><label for="fallow">Habits that may be missed and still keep the streak</label>
@@ -466,9 +467,10 @@ function saveDay(s,patch){
 }
 /* A checklist is one block of text; an indented line is a sub-item of the line
    above. A habit line may end with a schedule: "@mon,wed,fri" for fixed days,
-   "@3x" for three times a week on any days, or "@30/30" for a course — thirty
-   days on, thirty days off, repeating. The schedule is stripped out of the
-   name, so changing it never disturbs that habit's history. */
+   "@3x" for three times a week on any days, "@30/30" for a course — thirty days
+   on, thirty days off, repeating — or "@30d" for a run of thirty days held
+   without a break. The schedule is stripped out of the name, so changing it
+   never disturbs that habit's history. */
 const DOWKEY={sun:0,mon:1,tue:2,wed:3,thu:4,fri:5,sat:6};
 function parseSched(name){
   const m=name.match(/\s+@([a-z0-9,/]+)\s*$/i);
@@ -478,6 +480,8 @@ function parseSched(name){
   if(times && +times[1]>0) return {name:clean,sched:{type:"week",n:+times[1]}};
   const cycle=raw.match(/^(\d+)\/(\d+)$/);
   if(cycle && +cycle[1]>0 && +cycle[2]>0) return {name:clean,sched:{type:"cycle",on:+cycle[1],off:+cycle[2]}};
+  const run=raw.match(/^(\d+)d$/);
+  if(run && +run[1]>0) return {name:clean,sched:{type:"run",n:+run[1]}};
   const days=raw.split(",").map(d=>DOWKEY[d.slice(0,3)]).filter(d=>d!==undefined);
   return days.length?{name:clean,sched:{type:"days",days}}:{name,sched:null};
 }
@@ -511,6 +515,15 @@ function cyclePhase(sc,s,anchor){
   const n=Math.round((parseDate(s)-parseDate(anchor))/864e5);
   return n<0?null:n%(sc.on+sc.off);
 }
+/* Days held in an unbroken run ending at `s`. A deliberately skipped day bridges
+   the run without adding to it; today still open does not end it. Abstinence is
+   the case this exists for: one slip and the count starts again. */
+function runLength(key,s,ticked,isSkipped){
+  let n=0,k=s;
+  if(!ticked(k)) k=shift(k,-1);
+  while(ticked(k)||isSkipped(k)){ if(ticked(k)) n++; k=shift(k,-1) }
+  return n;
+}
 /* Is this habit wanted on this day? habitsFor(dateStr) returns that day's ticks;
    firstTick(key) the first day it was ever ticked, which anchors a course. */
 function dueOn(it,s,habitsFor,firstTick){
@@ -518,6 +531,7 @@ function dueOn(it,s,habitsFor,firstTick){
   if(!sc) return true;
   if((habitsFor(s)||{})[it.key]) return true;          // already done: always show it
   if(sc.type==="days") return sc.days.includes(parseDate(s).getDay());
+  if(sc.type==="run") return true;                      // a run is asked for daily
   if(sc.type==="cycle"){
     const p=cyclePhase(sc,s,firstTick&&firstTick(it.owner||it.key));
     return p===null||p<sc.on;                           // not started yet, or on
@@ -676,6 +690,10 @@ function renderList(elId,tree,done,ns,emptyHtml,isDue,noteFor){
 /* why a habit is sitting out today */
 function schedNote(it,s){
   const sc=it.sched; if(!sc) return "";
+  if(sc.type==="run"){
+    const n=runLength(it.key,s,k=>!!habitsFor(k)[it.key],skipped);
+    return n>=sc.n?"held "+n+" days":"day "+n+" of "+sc.n;
+  }
   if(sc.type==="cycle"){
     const p=cyclePhase(sc,s,firstTickOf(it.owner||it.key));
     if(p===null) return "day 1 of "+sc.on;

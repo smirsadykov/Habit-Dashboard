@@ -27,6 +27,8 @@ Long run @2x                twice a week, any days
 Take vitamins @30/30        a course: 30 days on, 30 days off, repeating
   Vitamin D
   Omega-3
+Abstinence @30d             a run: 30 days held without a break
+  No hookah                 each sub-item keeps its own run
 Gym @mon,wed                a schedule on a parent is inherited by its sub-items
   Squats
   Bench @tue                unless the sub-item sets its own
@@ -35,6 +37,12 @@ Gym @mon,wed                a schedule on a parent is inherited by its sub-items
 A habit that isn't wanted today still shows, greyed and out of the count, with the
 reason beside it (`mon thu`, `1 left this week`, `break · 27 days left`). Weeks run
 Monday to Sunday.
+
+A **run** (`@30d`) is for abstinence: it asks every day and counts the days held
+without a break, shown as `day 12 of 30`. One slip and the count starts again;
+a day marked **Skip this day** bridges the run instead of ending it. Sub-items
+inherit the length but each keeps its own count, so breaking one doesn't reset
+the others.
 
 A **course** (`@30/30`, or any on/off pair) counts from the first day you ticked it,
 so it starts when you actually start. Sub-items share their parent's course — three

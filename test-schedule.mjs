@@ -22,11 +22,12 @@ const source = [
   grab(/const leavesOf=tree=>[\s\S]*?\n  : \[h\]\);/, "leavesOf"),
   grab(/function weekDays\(s\)\{[\s\S]*?\n\}/, "weekDays"),
   grab(/function cyclePhase\(sc,s,anchor\)\{[\s\S]*?\n\}/, "cyclePhase"),
+  grab(/function runLength\(key,s,ticked,isSkipped\)\{[\s\S]*?\n\}/, "runLength"),
   grab(/function dueOn\(it,s,habitsFor,firstTick\)\{[\s\S]*?\n\}/, "dueOn"),
 ].join("\n");
 
-const { parseSched, parseTree, leavesOf, dueOn, weekDays, cyclePhase } =
-  new Function(source + "\nreturn {parseSched,parseTree,leavesOf,dueOn,weekDays,cyclePhase};")();
+const { parseSched, parseTree, leavesOf, dueOn, weekDays, cyclePhase, runLength } =
+  new Function(source + "\nreturn {parseSched,parseTree,leavesOf,dueOn,weekDays,cyclePhase,runLength};")();
 
 // 2026-09-14 is a Monday
 const MON = "2026-09-14", TUE = "2026-09-15", WED = "2026-09-16", SUN = "2026-09-20";
@@ -125,3 +126,30 @@ assert.equal(leavesOf(parseTree("Gym\n  Squats @mon", true))[0].owner, undefined
 assert.deepEqual(parseSched("Creatine @5/2").sched, { type: "cycle", on: 5, off: 2 }, "any on/off pair");
 assert.equal(parseSched("Notes @home/work").sched, null, "a slash that isn't two numbers is just text");
 console.log("course: 21 checks passed");
+
+/* --- a run: N days held without a break, for abstinence --- */
+const asceza = leavesOf(parseTree("Abstinence @30d\n  No hookah\n  No porn", true));
+assert.deepEqual(asceza[0].sched, { type: "run", n: 30 }, "sub-items inherit the run");
+assert.equal(asceza[0].key, "Abstinence/No hookah");
+assert.equal(dueOn(asceza[0], MON, none, () => null), true, "a run is asked for every day");
+
+const TODAY = "2026-09-23";
+const back = n => { const d = new Date(2026, 8, 23); d.setDate(d.getDate() - n); return d.toLocaleDateString("en-CA"); };
+const held = (...offsets) => { const set = new Set(offsets.map(back)); return k => set.has(k) };
+const noSkip = () => false;
+
+assert.equal(runLength("k", TODAY, () => false, noSkip), 0, "nothing held yet");
+assert.equal(runLength("k", TODAY, held(0), noSkip), 1, "ticked today");
+assert.equal(runLength("k", TODAY, held(0, 1, 2), noSkip), 3, "three days running");
+assert.equal(runLength("k", TODAY, held(1, 2, 3), noSkip), 3,
+  "today still open does not end the run — it just hasn't been added to yet");
+assert.equal(runLength("k", TODAY, held(0, 1, 3, 4), noSkip), 2, "a gap two days back ends the count there");
+assert.equal(runLength("k", TODAY, held(0, 1, 3, 4), k => k === back(2)), 4,
+  "a day skipped on purpose bridges the run without counting");
+assert.equal(runLength("k", TODAY, held(2, 3), noSkip), 0,
+  "a slip yesterday resets it, whatever came before");
+
+const runNote = n => (n >= 30 ? "held " + n + " days" : "day " + n + " of 30");
+assert.equal(runNote(runLength("k", TODAY, held(0, 1, 2), noSkip)), "day 3 of 30");
+assert.equal(runNote(30), "held 30 days");
+console.log("run: 12 checks passed");
